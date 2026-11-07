@@ -2,9 +2,9 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
-hook_script="${TMUXPAL_HOOK_SCRIPT:-$repo_dir/Scripts/tmuxpal-hook.sh}"
+hook_script="${AGENTPAL_HOOK_SCRIPT:-$repo_dir/Scripts/agentpal-hook.sh}"
 tmux_bin="${TMUX_BIN:-/opt/homebrew/bin/tmux}"
-hook_slot="${TMUXPAL_HOOK_SLOT:-900}"
+hook_slot="${AGENTPAL_HOOK_SLOT:-900}"
 
 if [[ ! -x "$hook_script" ]]; then
   chmod +x "$hook_script"
@@ -28,4 +28,4 @@ install_hook after-select-pane
 install_hook pane-exited
 install_hook pane-died
 
-echo "tmuxpal hooks installed in slot ${hook_slot}."
+echo "agentpal hooks installed in slot ${hook_slot}."

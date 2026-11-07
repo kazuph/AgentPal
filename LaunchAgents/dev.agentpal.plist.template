@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.tmuxpal</string>
+  <string>dev.agentpal</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__APP__/Contents/MacOS/TmuxPal</string>
+    <string>__APP__/Contents/MacOS/AgentPal</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/tmuxpal.out.log</string>
+  <string>__HOME__/Library/Logs/agentpal.out.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/tmuxpal.err.log</string>
+  <string>__HOME__/Library/Logs/agentpal.err.log</string>
 </dict>
 </plist>

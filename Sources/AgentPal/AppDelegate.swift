@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import ServiceManagement
 import SQLite3
-import TmuxPalCore
+import AgentPalCore
 import UniformTypeIdentifiers
 
 @MainActor
@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-        // Regular policy so TmuxPal shows up in the Dock and the Cmd+Tab app
+        // Regular policy so AgentPal shows up in the Dock and the Cmd+Tab app
         // switcher; selecting it there raises the overlay.
         NSApp.setActivationPolicy(.regular)
         configureMainMenu()
@@ -35,14 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         overlayController.show()
 
-        if ProcessInfo.processInfo.environment["TMUXPAL_ENABLE_APP_SERVER"] == "1" {
+        if ProcessInfo.processInfo.environment["AGENTPAL_ENABLE_APP_SERVER"] == "1" {
             let appServerManager = AppServerManager()
             self.appServerManager = appServerManager
             appServerManager.startIfAvailable()
         }
 
         configureStatusItem()
-        if ProcessInfo.processInfo.environment["TMUXPAL_AUTO_INSTALL_HOOKS"] == "1" {
+        if ProcessInfo.processInfo.environment["AGENTPAL_AUTO_INSTALL_HOOKS"] == "1" {
             confirmAndInstallTmuxHooks(startup: true)
         }
     }
@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(NSMenuItem(title: "Show Overlay", action: #selector(reloadOverlay), keyEquivalent: "r"))
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit TmuxPal", action: #selector(quit), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Quit AgentPal", action: #selector(quit), keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
         NSApp.mainMenu = mainMenu
@@ -348,11 +348,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = startup ? "Install tmux hooks?" : "Install or update tmux hooks?"
         alert.informativeText = """
-        TmuxPal can install global tmux hooks to update pane lifecycle state immediately when panes are created, selected, or closed.
+        AgentPal can install global tmux hooks to update pane lifecycle state immediately when panes are created, selected, or closed.
 
         \(TmuxHookInstaller.installExplanation)
 
-        This is optional. You can remove these hooks later from the TmuxPal menu.
+        This is optional. You can remove these hooks later from the AgentPal menu.
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Install Hooks")
@@ -364,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Remove tmux hooks?"
         alert.informativeText = """
-        TmuxPal will remove only its own tmux hooks from slot \(TmuxHookInstaller.hookSlot).
+        AgentPal will remove only its own tmux hooks from slot \(TmuxHookInstaller.hookSlot).
 
         Pane discovery still works without hooks, but lifecycle updates may be less immediate.
         """
@@ -395,7 +395,7 @@ enum PalSettings {
     } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
     private static let userCharacterRoot = FileManager.default
         .homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/tmuxpal/characters")
+        .appendingPathComponent(".codex/agentpal/characters")
     private static let legacyCharacterRoot = codexHome.appendingPathComponent(["pe", "ts"].joined())
 
     static var selectedPalDirectory: URL? {
@@ -554,6 +554,7 @@ private enum StatusBarLimitImage {
         let label: String
         let bucket: CodexUsageBucket?
         let color: NSColor
+        let observedAt: Date?
     }
 
     static func make(
@@ -615,17 +616,17 @@ private enum StatusBarLimitImage {
         claudePalette: UsageRingPalette
     ) -> [Row] {
         var rows = [
-            Row(label: "CC W", bucket: claudeSnapshot?.sevenDay, color: claudePalette.weekly),
-            Row(label: "CC 5h", bucket: claudeSnapshot?.fiveHour, color: claudePalette.shortTerm),
+            Row(label: "CC W", bucket: claudeSnapshot?.sevenDay, color: claudePalette.weekly, observedAt: claudeSnapshot.map { $0.sevenDayObservedAt ?? $0.observedAt }),
+            Row(label: "CC 5h", bucket: claudeSnapshot?.fiveHour, color: claudePalette.shortTerm, observedAt: claudeSnapshot.map { $0.fiveHourObservedAt ?? $0.observedAt }),
         ]
         if let modelLimit = claudeSnapshot?.modelLimits.first {
             rows.append(Row(
                 label: "\(modelLimit.displayName.prefix(3).uppercased()) W",
                 bucket: modelLimit.bucket,
-                color: claudePalette.weekly
+                color: claudePalette.weekly, observedAt: modelLimit.observedAt
             ))
         }
-        rows.append(Row(label: "CX W", bucket: codexSnapshot?.weekly, color: codexPalette.weekly))
+        rows.append(Row(label: "CX W", bucket: codexSnapshot?.weekly, color: codexPalette.weekly, observedAt: codexSnapshot?.observedAt))
         return rows
     }
 
@@ -689,6 +690,18 @@ private enum StatusBarLimitImage {
         let fillRect = NSRect(x: trackRect.minX, y: trackRect.minY, width: fillWidth, height: trackRect.height)
         row.color.withAlphaComponent(0.95).setFill()
         NSBezierPath(roundedRect: fillRect, xRadius: 1.3, yRadius: 1.3).fill()
+        guard let observedAt = row.observedAt, let pace = bucket.paceRemainingPercent(at: observedAt) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: trackRect, xRadius: 1.3, yRadius: 1.3).addClip()
+        if let difference = UsagePaceDifference.between(remaining: bucket.remainingPercent, pace: pace) {
+            (difference.kind == .overuse ? NSColor.systemRed : NSColor.systemGreen).setFill()
+            NSRect(x: trackRect.minX + trackRect.width * difference.lower / 100, y: trackRect.minY,
+                   width: trackRect.width * (difference.upper - difference.lower) / 100, height: trackRect.height).fill()
+        }
+        NSColor.black.setFill()
+        let markerX = min(max(trackRect.minX + trackRect.width * pace / 100, trackRect.minX + 0.5), trackRect.maxX - 0.5)
+        NSRect(x: markerX - 0.5, y: trackRect.minY, width: 1, height: trackRect.height).fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private static func drawUnavailableMarks(in rect: NSRect) {
@@ -726,12 +739,34 @@ enum UsageImageExporter {
         statusBarURL: URL?,
         overlayURL: URL?
     ) async -> UsageImageExportResult {
-        let codexReader = CodexUsageReader()
-        let claudeReader = ClaudeUsageReader()
-        async let codexSnapshot = codexReader.readLatest()
-        async let claudeSnapshot = claudeReader.readLatest()
-        let codex = await codexSnapshot
-        let claude = await claudeSnapshot
+        let codex: CodexUsageSnapshot?
+        let claude: ClaudeUsageSnapshot?
+        var ringMode: UsageRingDisplayMode = .labeled
+        if let fixturePath = ProcessInfo.processInfo.environment["AGENTPAL_USAGE_FIXTURE"] {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: fixturePath)),
+                  let fixture = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let observedAt = fixture["observedAt"] as? Double,
+                  let remaining = fixture["remaining"] as? Double else {
+                fputs("Invalid AGENTPAL_USAGE_FIXTURE\n", stderr)
+                return UsageImageExportResult(statusBarWritten: false, overlayWritten: false, overlayLabelBounds: [], overlaySize: nil)
+            }
+            var bucket: [String: Any] = ["used_percent": 100 - remaining]
+            if let pace = fixture["pace"] as? Double {
+                bucket["reset_at"] = observedAt + 604800 * pace / 100
+            }
+            claude = ClaudeUsageParser.snapshot(from: ["seven_day": bucket], observedAt: Date(timeIntervalSince1970: observedAt), source: "fixture")
+            codex = nil
+            if let mode = fixture["mode"] as? String, let parsed = UsageRingDisplayMode(rawValue: mode), parsed != .off {
+                ringMode = parsed
+            }
+        } else {
+            let codexReader = CodexUsageReader()
+            let claudeReader = ClaudeUsageReader()
+            async let codexSnapshot = codexReader.readLatest()
+            async let claudeSnapshot = claudeReader.readLatest()
+            codex = await codexSnapshot
+            claude = await claudeSnapshot
+        }
 
         let statusBarWritten: Bool
         if let statusBarURL,
@@ -751,7 +786,7 @@ enum UsageImageExporter {
         }
         let overlay = OverlayView(frame: .zero, palAssetConfig: PalSettings.assetConfig())
         overlay.setShowsBubbleUI(false)
-        overlay.setUsageRingMode(.labeled, persist: false)
+        overlay.setUsageRingMode(ringMode, persist: false)
         overlay.setUsageSnapshot(codex)
         overlay.setClaudeUsageSnapshot(claude)
         let size = overlay.preferredSize()
@@ -761,7 +796,7 @@ enum UsageImageExporter {
         return UsageImageExportResult(
             statusBarWritten: statusBarWritten,
             overlayWritten: FileManager.default.fileExists(atPath: overlayURL.path),
-            overlayLabelBounds: overlay.usageRingTagBounds(),
+            overlayLabelBounds: ringMode == .labeled ? overlay.usageRingTagBounds() : [],
             overlaySize: size
         )
     }
@@ -828,13 +863,13 @@ enum TmuxHookInstaller {
         "pane-died"
     ]
     static var hookSlot: Int {
-        Int(ProcessInfo.processInfo.environment["TMUXPAL_HOOK_SLOT"] ?? "") ?? 900
+        Int(ProcessInfo.processInfo.environment["AGENTPAL_HOOK_SLOT"] ?? "") ?? 900
     }
 
     static var installExplanation: String {
         """
         It writes tmux global hooks in slot \(hookSlot): \(hookNames.joined(separator: ", ")).
-        Each hook runs tmuxpal-hook.sh and appends a small event record under TmuxPal's app support directory.
+        Each hook runs agentpal-hook.sh and appends a small event record under AgentPal's app support directory.
         """
     }
 
@@ -844,7 +879,7 @@ enum TmuxHookInstaller {
             return
         }
         guard let script = stableHookScriptURL() else {
-            DebugLog.write("tmux hook install skipped: tmuxpal-hook.sh not found")
+            DebugLog.write("tmux hook install skipped: agentpal-hook.sh not found")
             return
         }
 
@@ -876,7 +911,7 @@ enum TmuxHookInstaller {
         guard let source = hookScriptSourceURL() else {
             return nil
         }
-        let destination = AppSupport.supportDirectory.appendingPathComponent("tmuxpal-hook.sh")
+        let destination = AppSupport.supportDirectory.appendingPathComponent("agentpal-hook.sh")
         do {
             try AppSupport.ensureSupportDirectory()
             if FileManager.default.fileExists(atPath: destination.path) {
@@ -892,14 +927,14 @@ enum TmuxHookInstaller {
     }
 
     private static func hookScriptSourceURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "tmuxpal-hook", withExtension: "sh") {
+        if let bundled = Bundle.main.url(forResource: "agentpal-hook", withExtension: "sh") {
             return bundled
         }
-        if let module = Bundle.module.url(forResource: "tmuxpal-hook", withExtension: "sh") {
+        if let module = Bundle.module.url(forResource: "agentpal-hook", withExtension: "sh") {
             return module
         }
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let developmentScript = currentDirectory.appendingPathComponent("Scripts/tmuxpal-hook.sh")
+        let developmentScript = currentDirectory.appendingPathComponent("Scripts/agentpal-hook.sh")
         if FileManager.default.fileExists(atPath: developmentScript.path) {
             return developmentScript
         }
@@ -1115,7 +1150,7 @@ struct CodexUsageReader {
     }
 }
 
-/// Reads Claude Code rate limits from a statusline cache file. TmuxPal does not
+/// Reads Claude Code rate limits from a statusline cache file. AgentPal does not
 /// read Claude Code credentials or the macOS keychain for Claude usage rings.
 actor ClaudeUsageReader {
     static let maxCacheAge: TimeInterval = 24 * 60 * 60
@@ -1137,7 +1172,7 @@ actor ClaudeUsageReader {
     }
 
     private var cacheURL: URL {
-        if let override = ProcessInfo.processInfo.environment["TMUXPAL_CLAUDE_USAGE_CACHE"],
+        if let override = ProcessInfo.processInfo.environment["AGENTPAL_CLAUDE_USAGE_CACHE"],
            !override.isEmpty {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
         }
@@ -1255,7 +1290,7 @@ final class OverlayController {
     }
 
     /// Raises the overlay, re-showing it first if it was hidden. Called when
-    /// the user picks TmuxPal in the Dock or the Cmd+Tab switcher.
+    /// the user picks AgentPal in the Dock or the Cmd+Tab switcher.
     func bringToFront() {
         guard window.isVisible else {
             show()
@@ -1372,7 +1407,7 @@ final class OverlayController {
                 overlayView.setCollapsed(false, persist: false)
                 fitWindow(keepingPalCenter: originalPalCenter)
                 window.displayIfNeeded()
-                let url = directory.appendingPathComponent("tmuxpal-\(palName)-\(size.rawValue)-\(variant.fileSuffix).png")
+                let url = directory.appendingPathComponent("agentpal-\(palName)-\(size.rawValue)-\(variant.fileSuffix).png")
                 overlayView.writeSnapshot(to: url)
                 createdURLs.append(url)
             }
@@ -1453,7 +1488,7 @@ final class OverlayController {
     private func applyBubbles(_ bubbles: [PaneBubble], paneCount: Int) {
         overlayView.setBubbles(bubbles)
         fitWindow()
-        if let snapshotPath = ProcessInfo.processInfo.environment["TMUXPAL_SNAPSHOT_PATH"] {
+        if let snapshotPath = ProcessInfo.processInfo.environment["AGENTPAL_SNAPSHOT_PATH"] {
             overlayView.displayIfNeeded()
             overlayView.writeSnapshot(to: URL(fileURLWithPath: snapshotPath))
         }
@@ -1482,7 +1517,7 @@ final class OverlayController {
             overlayView.setUsageSnapshot(nil)
             overlayView.setClaudeUsageSnapshot(nil)
         }
-        if let snapshotPath = ProcessInfo.processInfo.environment["TMUXPAL_SNAPSHOT_PATH"] {
+        if let snapshotPath = ProcessInfo.processInfo.environment["AGENTPAL_SNAPSHOT_PATH"] {
             overlayView.writeSnapshot(to: URL(fileURLWithPath: snapshotPath))
         }
     }
@@ -1575,7 +1610,7 @@ final class OverlayController {
     }
 
     private static func savedFrame() -> NSRect {
-        if ProcessInfo.processInfo.environment["TMUXPAL_RESET_POSITION"] == "1" {
+        if ProcessInfo.processInfo.environment["AGENTPAL_RESET_POSITION"] == "1" {
             return defaultFrame()
         }
         if let text = UserDefaults.standard.string(forKey: "overlayFrame") {
@@ -1614,7 +1649,7 @@ final class OverlayController {
                 paneIndex: "1",
                 tool: .codex,
                 active: true,
-                title: "TmuxPal",
+                title: "AgentPal",
                 detail: "Track multiple coding AI panes",
                 transcriptTail: "● Working (43s · esc to interrupt)"
             ),
@@ -1665,13 +1700,13 @@ final class OverlayController {
             sessionName: "0",
             windowIndex: windowIndex,
             windowId: "@\(windowIndex)",
-            windowName: "tmuxpal",
+            windowName: "agentpal",
             paneIndex: paneIndex,
             paneId: paneId,
             panePid: "0",
             paneTty: "",
             currentCommand: tool.rawValue,
-            currentPath: "/tmp/tmuxpal",
+            currentPath: "/tmp/agentpal",
             active: active,
             title: title,
             commandLine: tool.rawValue,
@@ -1779,7 +1814,7 @@ final class OverlayView: NSView {
     private var isHovering = false
     private var isDragging = false
     private var pendingBubbleClickPaneId: String?
-    private var isCollapsed = ProcessInfo.processInfo.environment["TMUXPAL_COLLAPSED"] == "1"
+    private var isCollapsed = ProcessInfo.processInfo.environment["AGENTPAL_COLLAPSED"] == "1"
         || UserDefaults.standard.bool(forKey: "bubblesCollapsed")
     private var animationState = "idle"
     private var lastHorizontalDragState = "running-right"
@@ -2109,7 +2144,6 @@ final class OverlayView: NSView {
         super.draw(dirtyRect)
         if dirtyRect.intersects(palRect()) {
             drawUsageRings()
-            drawUsageRingLabels()
             drawPal()
         }
         if !showsBubbleUI {
@@ -2167,27 +2201,19 @@ final class OverlayView: NSView {
         let rings = usageRings()
         guard !rings.isEmpty else { return }
         for ring in rings {
-            drawUsageRing(
-                center: ring.center,
-                radius: ring.radius,
-                lineWidth: ring.lineWidth,
-                bucket: ring.bucket,
-                color: ring.color
-            )
+            drawUsageRing(ring: ring)
         }
         clearUsageRingGap(rings: rings)
-        for ring in rings {
-            drawUsagePaceMarker(ring: ring)
+        if usageRingMode == .labeled {
+            for ring in rings {
+                drawUsageRingTag(ring.label, bucket: ring.bucket, center: ring.center, radius: ring.radius, color: ring.color, yOffset: ring.labelYOffset)
+                let difference = UsagePaceDifference.between(remaining: ring.bucket.remainingPercent, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt))
+                drawUsageRingEndDot(center: ring.center, radius: ring.radius, lineWidth: ring.lineWidth, bucket: ring.bucket, color: difference?.kind == .surplus ? .systemGreen : ring.color)
+            }
         }
+        for ring in rings { drawUsagePaceMarker(ring: ring) }
     }
 
-    private func drawUsageRingLabels() {
-        guard usageRingMode == .labeled, showsUsageRings else { return }
-        for ring in usageRings() {
-            drawUsageRingTag(ring.label, bucket: ring.bucket, center: ring.center, radius: ring.radius, color: ring.color, yOffset: ring.labelYOffset)
-            drawUsageRingEndDot(center: ring.center, radius: ring.radius, lineWidth: ring.lineWidth, bucket: ring.bucket, color: ring.color)
-        }
-    }
 
     private struct DrawableUsageRing {
         let label: String
@@ -2279,23 +2305,25 @@ final class OverlayView: NSView {
         }
     }
 
-    private func drawUsageRing(center: CGPoint, radius: CGFloat, lineWidth: CGFloat, bucket: CodexUsageBucket, color: NSColor) {
-        drawUsageRingTrack(center: center, radius: radius, lineWidth: lineWidth)
-        guard bucket.remainingPercent > 0.1 else { return }
-        let startAngle: CGFloat = 247.5
-        let sweep: CGFloat = 315
-        let foreground = NSBezierPath()
-        foreground.appendArc(
-            withCenter: center,
-            radius: radius,
-            startAngle: startAngle,
-            endAngle: startAngle - sweep * CGFloat(bucket.remainingPercent / 100.0),
-            clockwise: true
-        )
-        color.withAlphaComponent(0.96).setStroke()
-        foreground.lineWidth = lineWidth
-        foreground.lineCapStyle = .round
-        foreground.stroke()
+    private func drawUsageRing(ring: DrawableUsageRing) {
+        drawUsageRingTrack(center: ring.center, radius: ring.radius, lineWidth: ring.lineWidth)
+        let remaining = min(max(ring.bucket.remainingPercent, 0), 100)
+        func stroke(from lower: Double, to upper: Double, color: NSColor, cap: NSBezierPath.LineCapStyle) {
+            guard upper > lower else { return }
+            let path = NSBezierPath()
+            path.appendArc(withCenter: ring.center, radius: ring.radius,
+                           startAngle: 247.5 - 315 * lower / 100,
+                           endAngle: 247.5 - 315 * upper / 100, clockwise: true)
+            color.setStroke()
+            path.lineWidth = ring.lineWidth
+            path.lineCapStyle = cap
+            path.stroke()
+        }
+        stroke(from: 0, to: remaining, color: ring.color.withAlphaComponent(0.96), cap: .round)
+        if let difference = UsagePaceDifference.between(remaining: remaining, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt)) {
+            stroke(from: difference.lower, to: difference.upper,
+                   color: difference.kind == .overuse ? .systemRed : .systemGreen, cap: .butt)
+        }
     }
 
     private func drawUsageRingTrack(center: CGPoint, radius: CGFloat, lineWidth: CGFloat) {
@@ -2315,9 +2343,17 @@ final class OverlayView: NSView {
 
     private func drawUsagePaceMarker(ring: DrawableUsageRing) {
         guard let paceRemaining = ring.bucket.paceRemainingPercent(at: ring.observedAt) else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        let arc = CGMutablePath()
+        arc.addArc(center: ring.center, radius: ring.radius, startAngle: 247.5 * .pi / 180,
+                   endAngle: -67.5 * .pi / 180, clockwise: true)
+        context.addPath(arc.copy(strokingWithWidth: ring.lineWidth, lineCap: .butt, lineJoin: .round, miterLimit: 10))
+        context.clip()
         let angle = usageRingAngle(forRemainingPercent: paceRemaining)
-        let innerRadius = ring.radius - ring.lineWidth * 0.78
-        let outerRadius = ring.radius + ring.lineWidth * 0.78
+        let innerRadius = ring.radius - ring.lineWidth / 2
+        let outerRadius = ring.radius + ring.lineWidth / 2
         let inner = CGPoint(
             x: ring.center.x + cos(angle) * innerRadius,
             y: ring.center.y + sin(angle) * innerRadius
@@ -2331,7 +2367,7 @@ final class OverlayView: NSView {
         backing.line(to: outer)
         NSColor.white.withAlphaComponent(0.82).setStroke()
         backing.lineWidth = max(1.8, ring.lineWidth * 0.68)
-        backing.lineCapStyle = .round
+        backing.lineCapStyle = .butt
         backing.stroke()
 
         let marker = NSBezierPath()
@@ -2339,7 +2375,7 @@ final class OverlayView: NSView {
         marker.line(to: outer)
         NSColor.black.withAlphaComponent(0.72).setStroke()
         marker.lineWidth = max(1.0, ring.lineWidth * 0.36)
-        marker.lineCapStyle = .round
+        marker.lineCapStyle = .butt
         marker.stroke()
     }
 
@@ -3208,7 +3244,7 @@ final class AppServerManager {
     func startIfAvailable() {
         guard process == nil else { return }
         let codexCandidates = [
-            ProcessInfo.processInfo.environment["TMUXPAL_CODEX_PATH"],
+            ProcessInfo.processInfo.environment["AGENTPAL_CODEX_PATH"],
             Self.findExecutable("codex"),
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex"
@@ -3256,7 +3292,7 @@ final class AppServerManager {
 enum DebugLog {
     private static let url = FileManager.default
         .homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/tmuxpal.debug.log")
+        .appendingPathComponent("Library/Logs/agentpal.debug.log")
 
     static func write(_ message: String) {
         let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"

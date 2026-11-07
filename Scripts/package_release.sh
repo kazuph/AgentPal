@@ -5,22 +5,22 @@ repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 version="${1:-${GITHUB_REF_NAME:-0.9.0}}"
 version="${version#v}"
 dist_dir="$repo_dir/dist"
-app_path="$dist_dir/TmuxPal.app"
+app_path="$dist_dir/AgentPal.app"
 release_dir="$dist_dir/release"
 dmg_root="$release_dir/dmg-root"
-notary_zip_path="$release_dir/TmuxPal-${version}-notary.zip"
+notary_zip_path="$release_dir/AgentPal-${version}-notary.zip"
 
 /bin/rm -rf "$release_dir"
 /bin/mkdir -p "$release_dir"
 trap '/bin/rm -rf "$dmg_root"' EXIT
 
-TMUXPAL_VERSION="$version" "$repo_dir/Scripts/build_app.sh" >/dev/null
+AGENTPAL_VERSION="$version" "$repo_dir/Scripts/build_app.sh" >/dev/null
 
-zip_path="$release_dir/TmuxPal-${version}.zip"
-dmg_path="$release_dir/TmuxPal-${version}.dmg"
+zip_path="$release_dir/AgentPal-${version}.zip"
+dmg_path="$release_dir/AgentPal-${version}.dmg"
 checksum_path="$release_dir/checksums.txt"
 
-if [[ "${TMUXPAL_REQUIRE_NOTARIZATION:-}" == "1" ]]; then
+if [[ "${AGENTPAL_REQUIRE_NOTARIZATION:-}" == "1" ]]; then
   missing=()
   [[ -n "${APPLE_ID:-}" ]] || missing+=("APPLE_ID")
   [[ -n "${APPLE_TEAM_ID:-}" ]] || missing+=("APPLE_TEAM_ID")
@@ -49,7 +49,7 @@ ditto -c -k --keepParent "$app_path" "$zip_path"
 /bin/cp -R "$app_path" "$dmg_root/"
 /bin/ln -s /Applications "$dmg_root/Applications"
 hdiutil create \
-  -volname "TmuxPal" \
+  -volname "AgentPal" \
   -srcfolder "$dmg_root" \
   -ov \
   -format UDZO \
@@ -71,7 +71,7 @@ fi
 
 (
   cd "$release_dir"
-  shasum -a 256 "TmuxPal-${version}.zip" "TmuxPal-${version}.dmg" > "$checksum_path"
+  shasum -a 256 "AgentPal-${version}.zip" "AgentPal-${version}.dmg" > "$checksum_path"
 )
 
 echo "$release_dir"

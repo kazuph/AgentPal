@@ -76,7 +76,7 @@ jobs:
             export CODESIGN_IDENTITY
           fi
           if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
-            export TMUXPAL_REQUIRE_NOTARIZATION=1
+            export AGENTPAL_REQUIRE_NOTARIZATION=1
           fi
           ./Scripts/package_release.sh "${GITHUB_REF_NAME:-manual}"
         env:
@@ -88,7 +88,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TmuxPal-release
+          name: AgentPal-release
           path: dist/release/*
 
       - name: Publish GitHub Release

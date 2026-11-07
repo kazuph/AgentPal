@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="Design/IconProposals/tmuxpal-icon.png" width="160" alt="TmuxPal app icon">
+  <img src="Design/IconProposals/agentpal-icon.png" width="160" alt="AgentPal app icon">
 </p>
 
-# TmuxPal
+# AgentPal
 
-TmuxPal is a macOS menu bar companion for people who run coding agents inside
+AgentPal is a macOS menu bar companion for people who run coding agents inside
 tmux. It watches your tmux server, finds active AI coding panes, and keeps a
 small floating pal on screen with live status bubbles, pane shortcuts, and
 Codex and Claude Code usage rings.
@@ -27,16 +27,16 @@ Clicking a bubble focuses the matching tmux pane. Dragging the pal moves it and
 saves the position locally.
 
 By default the overlay is a regular window, not an always-on-top panel: other
-windows can cover it, and TmuxPal leaves it wherever your window management
+windows can cover it, and AgentPal leaves it wherever your window management
 puts it. When an AI pane finishes a run that has not been acknowledged yet,
 the overlay raises itself to the front once so you notice the completion.
-TmuxPal also appears in the Dock and the Cmd+Tab app switcher, so selecting it
+AgentPal also appears in the Dock and the Cmd+Tab app switcher, so selecting it
 there brings the overlay forward at any time. Turn on "Always on Top" in the
 menu bar menu to keep it floating above all windows like in older releases.
 
 ## Supported Agent TUIs
 
-TmuxPal detects these tools when they are running inside tmux panes:
+AgentPal detects these tools when they are running inside tmux panes:
 
 - Codex CLI: `codex`, including node-backed `bin/codex` launchers.
 - Claude Code: `claude` command, process arguments, or pane titles.
@@ -49,9 +49,15 @@ optional.
 
 ## Install
 
-Download the latest `TmuxPal-<version>.dmg` or `TmuxPal-<version>.zip` from the
-[GitHub Releases](https://github.com/kazuph/TmuxPal/releases) page, then move
-`TmuxPal.app` to `/Applications` and open it.
+Download the latest `AgentPal-<version>.dmg` or `AgentPal-<version>.zip` from the
+[GitHub Releases](https://github.com/kazuph/AgentPal/releases) page, then move
+`AgentPal.app` to `/Applications` and open it.
+
+When upgrading from TmuxPal, first disable TmuxPal's launch at login. If you
+installed its LaunchAgent, boot out `dev.tmuxpal` and remove its plist. Remove
+the old TmuxPal.app, then install AgentPal and enable its login launch if desired.
+If you installed tmux hooks, remove the old hook slot (including any custom
+slot) and install the AgentPal hooks. Existing TmuxPal data is left untouched.
 
 Requirements:
 
@@ -69,9 +75,9 @@ reject the app even though the checksum matches the release. To run that
 artifact locally:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/TmuxPal.app
-codesign --force --deep --sign - /Applications/TmuxPal.app
-open /Applications/TmuxPal.app
+xattr -dr com.apple.quarantine /Applications/AgentPal.app
+codesign --force --deep --sign - /Applications/AgentPal.app
+open /Applications/AgentPal.app
 ```
 
 This only makes your local copy launchable. It is not a substitute for Developer
@@ -79,7 +85,7 @@ ID signing and notarization for public distribution.
 
 ## CLI Signing Setup
 
-TmuxPal can be set up for Developer ID signing mostly from the CLI. Two Apple
+AgentPal can be set up for Developer ID signing mostly from the CLI. Two Apple
 account steps still happen outside this repository: creating the Developer ID
 certificate from the uploaded CSR, and creating an Apple app-specific password
 for notarization.
@@ -124,37 +130,37 @@ fails instead of publishing ad-hoc signed public artifacts.
 ```bash
 SWIFTPM_DISABLE_SANDBOX=1 swift test --disable-sandbox
 ./Scripts/build_app.sh
-open ./dist/TmuxPal.app
+open ./dist/AgentPal.app
 ```
 
 The app does not require `TMUX_PANE`; it polls the whole tmux server.
 
 ## Privacy And Local Data
 
-TmuxPal is local-first:
+AgentPal is local-first:
 
 - It reads tmux pane metadata and short pane transcript tails from your local
   tmux server.
 - It stores app preferences in macOS `UserDefaults`.
 - It stores optional tmux hook lifecycle events in
-  `~/Library/Application Support/tmuxpal/events.jsonl`.
+  `~/Library/Application Support/agentpal/events.jsonl`.
 - It does not send tmux pane contents, titles, repository names, or pal assets
-  to a TmuxPal server.
+  to a AgentPal server.
 
 Usage rings are the only feature that can make network requests:
 
 - Codex rings: when usage rings are enabled and Codex auth is available,
-  TmuxPal reads the local `${CODEX_HOME:-$HOME/.codex}/auth.json` access token
+  AgentPal reads the local `${CODEX_HOME:-$HOME/.codex}/auth.json` access token
   and calls ChatGPT's usage endpoint directly from your Mac.
-- Claude rings: TmuxPal only reads a local statusline cache file. It does not
+- Claude rings: AgentPal only reads a local statusline cache file. It does not
   read Claude Code credentials, access the macOS keychain, or call Anthropic's
   usage endpoint directly.
 
-Tokens are not written into TmuxPal logs or sent anywhere else by TmuxPal.
+Tokens are not written into AgentPal logs or sent anywhere else by AgentPal.
 
 ## tmux Hooks
 
-TmuxPal works without tmux hooks. Hooks only make pane lifecycle updates more
+AgentPal works without tmux hooks. Hooks only make pane lifecycle updates more
 immediate.
 
 The app never installs hooks silently on normal launch. Installing or removing
@@ -174,16 +180,16 @@ The installer uses hook slot `900` for:
 - `pane-exited`
 - `pane-died`
 
-It unsets only that slot before writing TmuxPal's hook, so repeated installs are
+It unsets only that slot before writing AgentPal's hook, so repeated installs are
 idempotent and do not overwrite other hook slots.
 
 ## Pals
 
-TmuxPal ships with Dokochan as the default pal.
+AgentPal ships with Dokochan as the default pal.
 
 The menu bar also lists custom pal directories from:
 
-- `$HOME/.codex/tmuxpal/characters`
+- `$HOME/.codex/agentpal/characters`
 - `${CODEX_HOME:-$HOME/.codex}/pets`
 
 Character directories must contain a readable manifest (`pal.json` or
@@ -192,7 +198,7 @@ expected to be `1536x1872` PNG/WebP files with 8 columns and 9 rows of
 `192x208` frames.
 
 The status menu includes shortcuts to open Petdex and awesome-codex-pet, so you
-can install a pet with its own installer and then reload TmuxPal.
+can install a pet with its own installer and then reload AgentPal.
 
 ## Usage Rings (Codex & Claude)
 
@@ -201,7 +207,7 @@ is available. Rings stack dynamically: Claude Code rings sit on the outside in
 Anthropic coral, Codex rings sit on the inside.
 
 - Claude rings show the 5-hour and 7-day (weekly) rate-limit windows.
-- Codex rings prefer monthly, then weekly, then the short window, without
+- Codex rings show monthly and weekly windows, without
   inventing values for missing buckets.
 - Each ring includes a grey 100% track and a small pace marker based on the
   bucket reset time and window length.
@@ -215,10 +221,10 @@ ring color.
 Claude rings use a statusline cache file containing the `rate_limits` JSON that
 Claude Code (v2.1.80+) passes to statusline scripts on stdin. Default path:
 `~/.claude/cache/statusline-rate-limits.json`, overridable with the
-`TMUXPAL_CLAUDE_USAGE_CACHE` environment variable. Files older than 24 hours
+`AGENTPAL_CLAUDE_USAGE_CACHE` environment variable. Files older than 24 hours
 are ignored. `CLAUDE_CONFIG_DIR` is honored when set.
 
-This route needs no keychain access and no network requests from TmuxPal. To
+This route needs no keychain access and no network requests from AgentPal. To
 enable it, make your Claude Code statusline script persist the `rate_limits` it
 receives. If you do not have a statusline yet, this minimal script is enough:
 
@@ -283,8 +289,8 @@ Required GitHub Actions secrets for signed public artifacts:
 Verify a downloaded release before publishing or announcing it:
 
 ```bash
-codesign -dv --verbose=4 /Applications/TmuxPal.app
-spctl -a -vvv /Applications/TmuxPal.app
+codesign -dv --verbose=4 /Applications/AgentPal.app
+spctl -a -vvv /Applications/AgentPal.app
 ```
 
 `Signature=adhoc` or `spctl ... rejected` means the artifact is not notarized

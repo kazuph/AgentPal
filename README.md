@@ -217,9 +217,10 @@ Anthropic coral, Codex rings sit on the inside.
   between the remaining end and the marker turns red. When it is ahead
   (headroom), the arc between the marker and the remaining end turns green.
 
-The menu bar icon draws the same windows as bars (`CC W`, `CC 5h`, the first
-model-scoped window such as `FAB W`, and `CX W`) with the same pace marker and
-red/green coloring.
+The menu bar icon draws four bars: `CC W`, `CC 5h`, the first model-scoped
+window such as `FAB W`, and `CX W`. They use the same pace marker and red/green
+coloring as the rings. Further model-scoped windows appear in the rings, the
+tooltip, and the menu; the Codex monthly window appears only in the rings.
 
 The Codex ring palette is sampled from the selected pal while filtering out
 likely skin and hair tones, so outfit colors are more likely to drive the final

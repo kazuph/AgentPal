@@ -17,7 +17,7 @@ Code, GitHub Copilot CLI, and opencode.
 - A draggable floating pal that stays above normal windows.
 - One compact bubble per detected AI pane, including tool, repository/window,
   status, and a short task title.
-- A menu bar icon that uses the currently selected pal image.
+- A menu bar icon with the selected pal image and compact usage bars.
 - Optional Codex and Claude Code usage rings around the pal, including
   even-spend pace markers (Claude rings outside in coral, Codex rings inside in
   pal-derived colors).
@@ -145,7 +145,7 @@ AgentPal is local-first:
 - It stores optional tmux hook lifecycle events in
   `~/Library/Application Support/agentpal/events.jsonl`.
 - It does not send tmux pane contents, titles, repository names, or pal assets
-  to a AgentPal server.
+  to an AgentPal server.
 
 Usage rings are the only feature that can make network requests:
 
@@ -206,11 +206,20 @@ Usage rings draw ambient C-shaped bars around the selected pal when usage data
 is available. Rings stack dynamically: Claude Code rings sit on the outside in
 Anthropic coral, Codex rings sit on the inside.
 
-- Claude rings show the 5-hour and 7-day (weekly) rate-limit windows.
-- Codex rings show monthly and weekly windows, without
-  inventing values for missing buckets.
+- Claude rings show the 5-hour and 7-day (weekly) rate-limit windows, plus one
+  ring per model-scoped weekly window (for example Fable) when
+  `~/.claude/cache/claude-model-limits.json` reports one.
+- Codex rings show the monthly and weekly windows when present. The Codex
+  short (5-hour) window is not shown. Missing buckets are never invented.
 - Each ring includes a grey 100% track and a small pace marker based on the
   bucket reset time and window length.
+- When the remaining amount is behind the pace marker (overspending), the arc
+  between the remaining end and the marker turns red. When it is ahead
+  (headroom), the arc between the marker and the remaining end turns green.
+
+The menu bar icon draws the same windows as bars (`CC W`, `CC 5h`, the first
+model-scoped window such as `FAB W`, and `CX W`) with the same pace marker and
+red/green coloring.
 
 The Codex ring palette is sampled from the selected pal while filtering out
 likely skin and hair tones, so outfit colors are more likely to drive the final

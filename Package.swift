@@ -2,23 +2,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "tmuxpal",
+    name: "agentpal",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "tmuxpal", targets: ["TmuxPal"]),
-        .library(name: "TmuxPalCore", targets: ["TmuxPalCore"])
+        .executable(name: "agentpal", targets: ["AgentPal"]),
+        .library(name: "AgentPalCore", targets: ["AgentPalCore"])
     ],
     targets: [
-        .target(name: "TmuxPalCore"),
+        .target(name: "AgentPalCore"),
         .executableTarget(
-            name: "TmuxPal",
-            dependencies: ["TmuxPalCore"],
+            name: "AgentPal",
+            dependencies: ["AgentPalCore"],
             resources: [.copy("Resources")],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .testTarget(
-            name: "TmuxPalTests",
-            dependencies: ["TmuxPalCore"],
+            name: "AgentPalTests",
+            dependencies: ["AgentPalCore"],
             resources: [.copy("Resources")]
         )
     ]

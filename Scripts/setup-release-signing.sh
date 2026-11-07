@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
-repo="${GITHUB_REPOSITORY:-kazuph/TmuxPal}"
+repo="${GITHUB_REPOSITORY:-kazuph/AgentPal}"
 certificate_path=""
 private_key_path=""
 p12_path=""
@@ -14,7 +14,7 @@ Usage:
   ./Scripts/setup-release-signing.sh --certificate developerID_application.cer --private-key DeveloperIDApplication.key
 
 This script stores GitHub Actions secrets needed to Developer ID sign and
-notarize TmuxPal release artifacts. It never prints secret values.
+notarize AgentPal release artifacts. It never prints secret values.
 EOF
 }
 

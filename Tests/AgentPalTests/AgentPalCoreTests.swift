@@ -1,7 +1,7 @@
 import XCTest
-@testable import TmuxPalCore
+@testable import AgentPalCore
 
-final class TmuxPalCoreTests: XCTestCase {
+final class AgentPalCoreTests: XCTestCase {
     func testDeduplicatesBubblesByPaneIDKeepingFirstObservation() {
         let first = PaneBubble(
             pane: makePane(paneId: "%145", command: "codex", transcriptTail: "first"),
@@ -61,7 +61,7 @@ final class TmuxPalCoreTests: XCTestCase {
 
     func testDetectsHerdrCodexAgents() throws {
         let output = """
-        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"working","cwd":"/workspace/tmuxpal","focused":true,"pane_id":"w6523c5b0eb8895-1","revision":0,"tab_id":"w6523c5b0eb8895:1","terminal_id":"term_6523c5b0eb885a","workspace_id":"w6523c5b0eb8895"}],"type":"agent_list"}}
+        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"working","cwd":"/workspace/agentpal","focused":true,"pane_id":"w6523c5b0eb8895-1","revision":0,"tab_id":"w6523c5b0eb8895:1","terminal_id":"term_6523c5b0eb885a","workspace_id":"w6523c5b0eb8895"}],"type":"agent_list"}}
         """
 
         let panes = TmuxCollector().parseHerdrAgentList(output)
@@ -70,7 +70,7 @@ final class TmuxPalCoreTests: XCTestCase {
         XCTAssertEqual(pane.tool, .codex)
         XCTAssertEqual(pane.sessionName, TmuxCollector.herdrSessionName)
         XCTAssertEqual(pane.paneId, "w6523c5b0eb8895-1")
-        XCTAssertEqual(pane.currentPath, "/workspace/tmuxpal")
+        XCTAssertEqual(pane.currentPath, "/workspace/agentpal")
         XCTAssertEqual(pane.status, .running)
     }
 
@@ -612,7 +612,7 @@ final class TmuxPalCoreTests: XCTestCase {
 
     func testCollectUsesInjectedHerdrExecutable() throws {
         let output = """
-        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"working","cwd":"/workspace/tmuxpal","focused":true,"pane_id":"w1-1","revision":0,"tab_id":"w1:1","terminal_id":"term_1","workspace_id":"w1"}],"type":"agent_list"}}
+        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"working","cwd":"/workspace/agentpal","focused":true,"pane_id":"w1-1","revision":0,"tab_id":"w1:1","terminal_id":"term_1","workspace_id":"w1"}],"type":"agent_list"}}
         """
         let runner = RecordingRunner(outputs: [
             "list-panes": "",
@@ -762,7 +762,7 @@ final class TmuxPalCoreTests: XCTestCase {
 
     private func herdrAgentList(status: String, focused: Bool) -> String {
         """
-        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"\(status)","cwd":"/workspace/tmuxpal","focused":\(focused),"pane_id":"w1-1","revision":0,"tab_id":"w1:1","terminal_id":"term_1","workspace_id":"w1"}],"type":"agent_list"}}
+        {"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"\(status)","cwd":"/workspace/agentpal","focused":\(focused),"pane_id":"w1-1","revision":0,"tab_id":"w1:1","terminal_id":"term_1","workspace_id":"w1"}],"type":"agent_list"}}
         """
     }
 
@@ -799,5 +799,30 @@ final class RecordingRunner: CommandRunning, @unchecked Sendable {
             return output
         }
         return ""
+    }
+}
+
+final class UsagePaceDifferenceTests: XCTestCase {
+    func testPaceUnavailableWithoutResetOrPositiveWindow() {
+        let observed = Date(timeIntervalSince1970: 100)
+        for (window, reset) in [(nil as Double?, 200 as Double?), (0, 200), (100, nil)] {
+            XCTAssertNil(CodexUsageBucket(label: "W", usedPercent: 50, windowSeconds: window, resetAt: reset).paceRemainingPercent(at: observed))
+        }
+    }
+
+    func testDifferenceBoundariesAndMissingPace() {
+        func check(_ r: Double, _ p: Double?, _ kind: UsagePaceDifference.Kind?, _ lower: Double = 0, _ upper: Double = 0) {
+            let value = UsagePaceDifference.between(remaining: r, pace: p)
+            XCTAssertEqual(value?.kind, kind)
+            if let value { XCTAssertEqual(value.lower, lower); XCTAssertEqual(value.upper, upper) }
+        }
+        check(0, 50, .overuse, 0, 50)
+        check(0, 0, nil)
+        check(100, 100, nil)
+        check(100, 0, .surplus, 0, 100)
+        check(50, 50, nil)
+        check(50, 50.0001, .overuse, 50, 50.0001)
+        check(50, nil, nil)
+        check(-1, 101, .overuse, 0, 100)
     }
 }

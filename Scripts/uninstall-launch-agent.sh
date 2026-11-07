@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-label="dev.tmuxpal"
+label="dev.agentpal"
 plist_path="$HOME/Library/LaunchAgents/${label}.plist"
 launchctl bootout "gui/$(id -u)" "$plist_path" >/dev/null 2>&1 || true
 rm -f "$plist_path"

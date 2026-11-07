@@ -452,7 +452,7 @@ public struct TmuxCollector: Sendable {
     }
 
     private static func defaultSocketPath() -> String? {
-        if let explicit = ProcessInfo.processInfo.environment["TMUXPAL_TMUX_SOCKET"], !explicit.isEmpty {
+        if let explicit = ProcessInfo.processInfo.environment["AGENTPAL_TMUX_SOCKET"], !explicit.isEmpty {
             return explicit
         }
         let uid = getuid()
@@ -465,7 +465,7 @@ public struct TmuxCollector: Sendable {
 
     private static func defaultHerdrPath() -> String? {
         let fileManager = FileManager.default
-        if let explicit = ProcessInfo.processInfo.environment["TMUXPAL_HERDR_PATH"],
+        if let explicit = ProcessInfo.processInfo.environment["AGENTPAL_HERDR_PATH"],
            fileManager.isExecutableFile(atPath: explicit) {
             return explicit
         }

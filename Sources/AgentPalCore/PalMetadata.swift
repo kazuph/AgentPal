@@ -40,7 +40,7 @@ public struct PalAssetConfig: Sendable {
 
     public init(
         spritesheetURL: URL? = nil,
-        metadataURL: URL = URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/tmuxpal/characters/dokochan/pal.json")
+        metadataURL: URL = URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/agentpal/characters/dokochan/pal.json")
     ) {
         self.metadataURL = metadataURL
         self.spritesheetURL = spritesheetURL ?? Self.defaultSpritesheetURL(metadataURL: metadataURL)
@@ -60,11 +60,11 @@ public struct PalAssetConfig: Sendable {
             }
         }
 
-        let png = URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/tmuxpal/characters/dokochan/spritesheet.png")
+        let png = URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/agentpal/characters/dokochan/spritesheet.png")
         if FileManager.default.fileExists(atPath: png.path) {
             return png
         }
-        return URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/tmuxpal/characters/dokochan/spritesheet.webp")
+        return URL(fileURLWithPath: "\(NSHomeDirectory())/.codex/agentpal/characters/dokochan/spritesheet.webp")
     }
 
     public func loadRows() -> [AnimationRow] {

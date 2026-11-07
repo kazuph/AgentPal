@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.10.0
+
+TmuxPal is now AgentPal, and the usage bars and rings show how far each
+window is ahead of or behind an even-spend pace.
+
+### Highlights
+
+- The app, bundle id (`dev.agentpal`), support directory, environment
+  variables (`AGENTPAL_*`), hook script, logs, release artifacts, Homebrew
+  cask (`kazuph/tap/agentpal`) and GitHub repository (`kazuph/AgentPal`) use
+  the AgentPal name. TmuxPal settings are not migrated, and TmuxPal data is
+  left in place.
+- The menu bar bars gain the pace marker. When the remaining amount is behind
+  pace, the span up to the marker turns red; when it is ahead, the span past
+  the marker turns green. The overlay rings follow the same rule.
+- The ring pace marker stays inside the ring band instead of sticking out.
+- `AGENTPAL_USAGE_FIXTURE` renders fixed usage buckets through the real
+  drawing code for image checks without network access.
+
+### Verification
+
+- `swift test` passed all 42 tests and the app build was signature-checked.
+- Fixture renders had no opaque red or green pixels outside the difference
+  span, and pace markers stayed inside the band and the arc.
+- A live run showed Fable weekly ahead of pace (green) and Codex weekly
+  behind (red) in both the overlay and the menu bar image.
+
 ## v0.9.17
 
 TmuxPal v0.9.17 surfaces the Fable weekly limit, which Claude Code never

@@ -744,18 +744,47 @@ enum UsageImageExporter {
         var ringMode: UsageRingDisplayMode = .labeled
         if let fixturePath = ProcessInfo.processInfo.environment["AGENTPAL_USAGE_FIXTURE"] {
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: fixturePath)),
-                  let fixture = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let observedAt = fixture["observedAt"] as? Double,
-                  let remaining = fixture["remaining"] as? Double else {
+                  let fixture = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 fputs("Invalid AGENTPAL_USAGE_FIXTURE\n", stderr)
                 return UsageImageExportResult(statusBarWritten: false, overlayWritten: false, overlayLabelBounds: [], overlaySize: nil)
             }
-            var bucket: [String: Any] = ["used_percent": 100 - remaining]
-            if let pace = fixture["pace"] as? Double {
-                bucket["reset_at"] = observedAt + 604800 * pace / 100
+            func parseBucket(_ value: [String: Any], window: Double, key: String) -> (ClaudeUsageSnapshot, Date)? {
+                guard let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double else { return nil }
+                let date = Date(timeIntervalSince1970: observed)
+                var bucket: [String: Any] = ["used_percent": 100 - remaining]
+                if let pace = value["pace"] as? Double { bucket["reset_at"] = observed + window * pace / 100 }
+                guard let snapshot = ClaudeUsageParser.snapshot(from: [key: bucket], observedAt: date, source: "fixture") else { return nil }
+                return (snapshot, date)
             }
-            claude = ClaudeUsageParser.snapshot(from: ["seven_day": bucket], observedAt: Date(timeIntervalSince1970: observedAt), source: "fixture")
-            codex = nil
+            let weekSeconds = 7.0 * 24 * 60 * 60
+            let shortSeconds = 5.0 * 60 * 60
+            let legacy = fixture["remaining"] != nil ? fixture : nil
+            let weekInput = fixture["claudeWeekly"] as? [String: Any] ?? legacy
+            let shortInput = fixture["claudeFiveHour"] as? [String: Any]
+            let modelInput = fixture["claudeModelWeekly"] as? [String: Any]
+            let codexInput = fixture["codexWeekly"] as? [String: Any]
+            let week = weekInput.flatMap { parseBucket($0, window: weekSeconds, key: "seven_day") }
+            let short = shortInput.flatMap { parseBucket($0, window: shortSeconds, key: "five_hour") }
+            var model: ClaudeModelUsageLimit?
+            if let value = modelInput, let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double {
+                var item: [String: Any] = ["display_name": value["displayName"] as? String ?? "Model", "used_percentage": 100 - remaining]
+                if let pace = value["pace"] as? Double { item["resets_at"] = observed + weekSeconds * pace / 100 }
+                let date = Date(timeIntervalSince1970: observed)
+                model = ClaudeModelLimitsParser.snapshot(from: ["fetched_at": observed, "model_limits": [item]], now: date)?.modelLimits.first
+            }
+            if let value = codexInput, let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double {
+                var bucket: [String: Any] = ["used_percent": 100 - remaining, "limit_window_seconds": weekSeconds]
+                if let pace = value["pace"] as? Double { bucket["reset_at"] = observed + weekSeconds * pace / 100 }
+                codex = CodexUsageParser.snapshot(from: ["rate_limit": ["secondary": bucket]], observedAt: Date(timeIntervalSince1970: observed), source: "fixture")
+            } else { codex = nil }
+            if weekInput != nil && week == nil || shortInput != nil && short == nil || modelInput != nil && model == nil || codexInput != nil && codex == nil || (week == nil && short == nil && model == nil && codex == nil) {
+                fputs("Invalid AGENTPAL_USAGE_FIXTURE bucket\n", stderr)
+                return UsageImageExportResult(statusBarWritten: false, overlayWritten: false, overlayLabelBounds: [], overlaySize: nil)
+            }
+            let observed = week?.1 ?? short?.1 ?? model?.observedAt ?? codex!.observedAt
+            claude = ClaudeUsageSnapshot(fiveHour: short?.0.fiveHour, sevenDay: week?.0.sevenDay,
+                                         modelLimits: model.map { [$0] } ?? [], fiveHourObservedAt: short?.1,
+                                         sevenDayObservedAt: week?.1, observedAt: observed, source: "fixture")
             if let mode = fixture["mode"] as? String, let parsed = UsageRingDisplayMode(rawValue: mode), parsed != .off {
                 ringMode = parsed
             }
@@ -2207,8 +2236,7 @@ final class OverlayView: NSView {
         if usageRingMode == .labeled {
             for ring in rings {
                 drawUsageRingTag(ring.label, bucket: ring.bucket, center: ring.center, radius: ring.radius, color: ring.color, yOffset: ring.labelYOffset)
-                let difference = UsagePaceDifference.between(remaining: ring.bucket.remainingPercent, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt))
-                drawUsageRingEndDot(center: ring.center, radius: ring.radius, lineWidth: ring.lineWidth, bucket: ring.bucket, color: difference?.kind == .surplus ? .systemGreen : ring.color)
+                drawUsageRingEndDot(ring: ring)
             }
         }
         for ring in rings { drawUsagePaceMarker(ring: ring) }
@@ -2319,7 +2347,9 @@ final class OverlayView: NSView {
             path.lineCapStyle = cap
             path.stroke()
         }
-        stroke(from: 0, to: remaining, color: ring.color.withAlphaComponent(0.96), cap: .round)
+        if remaining > 0.1 {
+            stroke(from: 0, to: remaining, color: ring.color.withAlphaComponent(0.96), cap: .round)
+        }
         if let difference = UsagePaceDifference.between(remaining: remaining, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt)) {
             stroke(from: difference.lower, to: difference.upper,
                    color: difference.kind == .overuse ? .systemRed : .systemGreen, cap: .butt)
@@ -2398,14 +2428,31 @@ final class OverlayView: NSView {
         context.restoreGState()
     }
 
-    private func drawUsageRingEndDot(center: CGPoint, radius: CGFloat, lineWidth: CGFloat, bucket: CodexUsageBucket, color: NSColor) {
-        guard bucket.remainingPercent > 0.1 else { return }
-        let angle = usageRingAngle(forRemainingPercent: bucket.remainingPercent)
-        let point = CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
-        let dotSize = max(3.0, lineWidth + 0.8)
+    private func drawUsageRingEndDot(ring: DrawableUsageRing) {
+        let remaining = ring.bucket.remainingPercent
+        guard remaining > 0.1 else { return }
+        let angle = usageRingAngle(forRemainingPercent: remaining)
+        let point = CGPoint(x: ring.center.x + cos(angle) * ring.radius, y: ring.center.y + sin(angle) * ring.radius)
+        let dotSize = max(3.0, ring.lineWidth + 0.8)
         let dotRect = NSRect(x: point.x - dotSize / 2, y: point.y - dotSize / 2, width: dotSize, height: dotSize)
-        color.setFill()
-        NSBezierPath(ovalIn: dotRect).fill()
+        let dot = NSBezierPath(ovalIn: dotRect)
+        ring.color.setFill()
+        dot.fill()
+        guard let difference = UsagePaceDifference.between(remaining: remaining, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt)),
+              difference.kind == .surplus,
+              let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        let wedge = CGMutablePath()
+        wedge.move(to: ring.center)
+        wedge.addArc(center: ring.center, radius: ring.radius + dotSize,
+                     startAngle: usageRingAngle(forRemainingPercent: difference.lower),
+                     endAngle: usageRingAngle(forRemainingPercent: difference.upper), clockwise: true)
+        wedge.closeSubpath()
+        context.addPath(wedge)
+        context.clip()
+        NSColor.systemGreen.setFill()
+        dot.fill()
     }
 
     private func drawUsageRingTag(_ label: String, bucket: CodexUsageBucket, center: CGPoint, radius: CGFloat, color: NSColor, yOffset: CGFloat) {

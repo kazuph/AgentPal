@@ -2350,10 +2350,30 @@ final class OverlayView: NSView {
         if remaining > 0.1 {
             stroke(from: 0, to: remaining, color: ring.color.withAlphaComponent(0.96), cap: .round)
         }
-        if let difference = UsagePaceDifference.between(remaining: remaining, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt)) {
-            stroke(from: difference.lower, to: difference.upper,
-                   color: difference.kind == .overuse ? .systemRed : .systemGreen, cap: .butt)
+        guard let difference = UsagePaceDifference.between(remaining: remaining, pace: ring.bucket.paceRemainingPercent(at: ring.observedAt)) else { return }
+        if difference.kind == .overuse {
+            stroke(from: difference.lower, to: difference.upper, color: .systemRed, cap: .butt)
+            return
         }
+        // Surplus: everything past the pace marker, including the rounded end cap, must be green only.
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        clipToUsageRingSectorPastPace(ring: ring, pace: difference.lower, extent: ring.lineWidth * 2)
+        stroke(from: 0, to: remaining, color: .systemGreen, cap: .round)
+    }
+
+    /// Clips to the sector that starts at the pace angle and runs clockwise past the remaining end.
+    private func clipToUsageRingSectorPastPace(ring: DrawableUsageRing, pace: Double, extent: CGFloat) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let sector = CGMutablePath()
+        sector.move(to: ring.center)
+        sector.addArc(center: ring.center, radius: ring.radius + extent,
+                      startAngle: usageRingAngle(forRemainingPercent: pace),
+                      endAngle: -110 * .pi / 180, clockwise: true)
+        sector.closeSubpath()
+        context.addPath(sector)
+        context.clip()
     }
 
     private func drawUsageRingTrack(center: CGPoint, radius: CGFloat, lineWidth: CGFloat) {
@@ -2443,14 +2463,7 @@ final class OverlayView: NSView {
               let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
         defer { context.restoreGState() }
-        let wedge = CGMutablePath()
-        wedge.move(to: ring.center)
-        wedge.addArc(center: ring.center, radius: ring.radius + dotSize,
-                     startAngle: usageRingAngle(forRemainingPercent: difference.lower),
-                     endAngle: usageRingAngle(forRemainingPercent: difference.upper), clockwise: true)
-        wedge.closeSubpath()
-        context.addPath(wedge)
-        context.clip()
+        clipToUsageRingSectorPastPace(ring: ring, pace: difference.lower, extent: dotSize)
         NSColor.systemGreen.setFill()
         dot.fill()
     }

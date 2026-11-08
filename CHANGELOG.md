@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.1
+
+### Fixes
+
+- When a ring is ahead of pace, everything past the pace marker is drawn in
+  green only. The base-colored round end cap and the base-colored half of the
+  end dot no longer stick out beyond the green span.
+
+### Verification
+
+- `swift test` passed all 42 tests.
+- A fixture render (72% and 100% remaining ahead of pace, 20% behind) showed
+  a fully green end cap and end dot, with the red overuse span unchanged.
+
 ## v0.10.0
 
 TmuxPal is now AgentPal, and the usage bars and rings show how far each

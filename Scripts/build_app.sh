@@ -39,7 +39,7 @@ cat > "$contents_dir/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>${AGENTPAL_VERSION:-0.10.0}</string>
+  <string>${AGENTPAL_VERSION:-0.10.1}</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>

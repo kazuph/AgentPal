@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.13.0
+
+### Features
+
+- The status bar image uses the same rows and names as `agentpal usage`:
+  Claude W, Claude 5h (only while Claude Code reports it), Fable W, Codex W and
+  OpenCode Go W. The label column follows the longest name, and five rows
+  are packed to fit the 22 pt height.
+- The status menu and tooltip drop "Claude Code 5h" while Claude Code reports
+  no 5-hour limit, and add "OpenCode Go W" when this Mac has a Go key.
+
 ## v0.12.0
 
 ### Features

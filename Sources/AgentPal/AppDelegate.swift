@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appServerManager: AppServerManager?
     private var latestCodexUsageSnapshot: CodexUsageSnapshot?
     private var latestClaudeUsageSnapshot: ClaudeUsageSnapshot?
+    private var latestOpenCodeGoUsage: OpenCodeGoUsageReader.Result = .notConfigured
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard SingleInstanceGuard.shouldContinueLaunching() else {
@@ -28,9 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let overlayController = OverlayController()
         self.overlayController = overlayController
-        overlayController.onUsageChanged = { [weak self] codexSnapshot, claudeSnapshot in
+        overlayController.onUsageChanged = { [weak self] codexSnapshot, claudeSnapshot, openCodeGo in
             self?.latestCodexUsageSnapshot = codexSnapshot
             self?.latestClaudeUsageSnapshot = claudeSnapshot
+            self?.latestOpenCodeGoUsage = openCodeGo
             self?.rebuildStatusMenu()
         }
         overlayController.show()
@@ -74,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: StatusBarLimitImage.size.width + 6)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
         rebuildStatusMenu()
     }
@@ -85,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in StatusBarLimitImage.menuItems(
             codexSnapshot: latestCodexUsageSnapshot,
             claudeSnapshot: latestClaudeUsageSnapshot,
+            openCodeGo: latestOpenCodeGoUsage,
             target: self,
             action: #selector(ignoreLimitMenuItem(_:))
         ) {
@@ -122,15 +125,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusButton() {
         guard let button = statusItem?.button else { return }
         button.title = ""
-        statusItem?.length = StatusBarLimitImage.size.width + 6
-        button.image = PalSettings.statusBarImage(
+        let image = PalSettings.statusBarImage(
             codexSnapshot: latestCodexUsageSnapshot,
-            claudeSnapshot: latestClaudeUsageSnapshot
+            claudeSnapshot: latestClaudeUsageSnapshot,
+            openCodeGo: latestOpenCodeGoUsage
         )
+        statusItem?.length = (image?.size.width ?? StatusBarLimitImage.height) + 6
+        button.image = image
         button.imagePosition = .imageOnly
         button.toolTip = StatusBarLimitImage.tooltip(
             codexSnapshot: latestCodexUsageSnapshot,
-            claudeSnapshot: latestClaudeUsageSnapshot
+            claudeSnapshot: latestClaudeUsageSnapshot,
+            openCodeGo: latestOpenCodeGoUsage
         )
     }
 
@@ -483,11 +489,16 @@ enum PalSettings {
         return firstFrameImage(for: PalAssetConfig(metadataURL: metadataURL), size: NSSize(width: 20, height: 22))
     }
 
-    static func statusBarImage(codexSnapshot: CodexUsageSnapshot?, claudeSnapshot: ClaudeUsageSnapshot?) -> NSImage? {
+    static func statusBarImage(
+        codexSnapshot: CodexUsageSnapshot?,
+        claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
+    ) -> NSImage? {
         StatusBarLimitImage.make(
             palImage: firstFrameImage(for: assetConfig(), size: NSSize(width: 18, height: 20)),
             codexSnapshot: codexSnapshot,
             claudeSnapshot: claudeSnapshot,
+            openCodeGo: openCodeGo,
             codexPalette: UsageRingPalette.derived(from: PalSpriteLoader(config: assetConfig()).dominantColor()),
             claudePalette: UsageRingPalette.derived(from: UsageRingPalette.claudeBase)
         )
@@ -548,7 +559,10 @@ enum PalSettings {
 }
 
 private enum StatusBarLimitImage {
-    static let size = NSSize(width: 64, height: 22)
+    static let height: CGFloat = 22
+    static let labelX: CGFloat = 20
+    static let trackWidth: CGFloat = 22
+    static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 4.4, weight: .semibold)
 
     private struct Row {
         let label: String
@@ -561,30 +575,42 @@ private enum StatusBarLimitImage {
         palImage: NSImage?,
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured,
         codexPalette: UsageRingPalette,
         claudePalette: UsageRingPalette
     ) -> NSImage {
-        let image = NSImage(size: size)
+        let rows = rows(
+            codexSnapshot: codexSnapshot,
+            claudeSnapshot: claudeSnapshot,
+            openCodeGo: openCodeGo,
+            codexPalette: codexPalette,
+            claudePalette: claudePalette
+        )
+        // ラベルの列は一番長い名前に合わせ、バーはその右に並べる。
+        let labelAttrs = [NSAttributedString.Key.font: labelFont]
+        let labelWidth = rows.map { ceil(NSString(string: $0.label).size(withAttributes: labelAttrs).width) }.max() ?? 0
+        let trackX = labelX + labelWidth + 1.5
+        let image = NSImage(size: NSSize(width: trackX + trackWidth + 1, height: height))
         image.lockFocus()
         NSGraphicsContext.current?.imageInterpolation = .high
         palImage?.draw(in: NSRect(x: 0, y: 1, width: 18, height: 20))
 
-        let rows = rows(
-            codexSnapshot: codexSnapshot,
-            claudeSnapshot: claudeSnapshot,
-            codexPalette: codexPalette,
-            claudePalette: claudePalette
-        )
+        // 4行までは5pt間隔。5行（Claude 5h が戻ったとき）は高さに収まるよう詰める。
+        let step = rows.count > 1 ? min(5.0, (height - 4.5 - 1.2) / CGFloat(rows.count - 1)) : 5.0
         for (index, row) in rows.enumerated() {
-            draw(row: row, y: size.height - 4.5 - CGFloat(index) * 5.0)
+            draw(row: row, y: height - 4.5 - CGFloat(index) * step, trackX: trackX)
         }
         image.unlockFocus()
         image.isTemplate = false
         return image
     }
 
-    static func tooltip(codexSnapshot: CodexUsageSnapshot?, claudeSnapshot: ClaudeUsageSnapshot?) -> String {
-        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot)
+    static func tooltip(
+        codexSnapshot: CodexUsageSnapshot?,
+        claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
+    ) -> String {
+        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, openCodeGo: openCodeGo)
             .map { row in
                 guard let bucket = row.bucket else { return "\(row.label): --" }
                 return "\(row.label): \(Int(round(bucket.remainingPercent)))% remaining, reset \(resetText(for: bucket))"
@@ -595,10 +621,11 @@ private enum StatusBarLimitImage {
     static func menuItems(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured,
         target: AnyObject?,
         action: Selector?
     ) -> [NSMenuItem] {
-        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot).map { row in
+        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, openCodeGo: openCodeGo).map { row in
             let item = NSMenuItem(
                 title: "\(row.label): \(limitText(for: row.bucket))",
                 action: action,
@@ -609,40 +636,44 @@ private enum StatusBarLimitImage {
         }
     }
 
+    static let openCodeGoColor = NSColor(calibratedRed: 200 / 255, green: 160 / 255, blue: 1, alpha: 1)
+
+    /// The same rows and names as `agentpal usage` (UsageTextRow.rows), with the first
+    /// per-model limit only so the image keeps its height.
     private static func rows(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result,
         codexPalette: UsageRingPalette,
         claudePalette: UsageRingPalette
     ) -> [Row] {
-        var rows = [
-            Row(label: "CC W", bucket: claudeSnapshot?.sevenDay, color: claudePalette.weekly, observedAt: claudeSnapshot.map { $0.sevenDayObservedAt ?? $0.observedAt }),
-            Row(label: "CC 5h", bucket: claudeSnapshot?.fiveHour, color: claudePalette.shortTerm, observedAt: claudeSnapshot.map { $0.fiveHourObservedAt ?? $0.observedAt }),
-        ]
-        if let modelLimit = claudeSnapshot?.modelLimits.first {
-            rows.append(Row(
-                label: "\(modelLimit.displayName.prefix(3).uppercased()) W",
-                bucket: modelLimit.bucket,
-                color: claudePalette.weekly, observedAt: modelLimit.observedAt
-            ))
+        var textRows = UsageTextRow.rows(codex: codexSnapshot, claude: claudeSnapshot, openCodeGo: openCodeGo)
+        let modelLabels = Set((claudeSnapshot?.modelLimits ?? []).dropFirst().map { "\($0.displayName) W" })
+        textRows.removeAll { modelLabels.contains($0.label) }
+        return textRows.map { row in
+            let color: NSColor
+            switch row.kind {
+            case .claude: color = row.label == "Claude 5h" ? claudePalette.shortTerm : claudePalette.weekly
+            case .codex: color = codexPalette.weekly
+            case .openCodeGo: color = openCodeGoColor
+            }
+            return Row(label: row.label, bucket: row.bucket, color: color, observedAt: row.observedAt)
         }
-        rows.append(Row(label: "CX W", bucket: codexSnapshot?.weekly, color: codexPalette.weekly, observedAt: codexSnapshot?.observedAt))
-        return rows
     }
 
     private static func usageRows(
         codexSnapshot: CodexUsageSnapshot?,
-        claudeSnapshot: ClaudeUsageSnapshot?
+        claudeSnapshot: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result
     ) -> [(label: String, bucket: CodexUsageBucket?)] {
-        var rows = [
-            ("Claude Code W", claudeSnapshot?.sevenDay),
-            ("Claude Code 5h", claudeSnapshot?.fiveHour)
-        ]
-        for modelLimit in claudeSnapshot?.modelLimits ?? [] {
-            rows.append(("\(modelLimit.displayName) W", modelLimit.bucket))
+        UsageTextRow.rows(codex: codexSnapshot, claude: claudeSnapshot, openCodeGo: openCodeGo).map { row in
+            switch row.label {
+            case "Claude W": return ("Claude Code W", row.bucket)
+            case "Claude 5h": return ("Claude Code 5h", row.bucket)
+            case "Go W": return ("OpenCode Go W", row.bucket)
+            default: return (row.label, row.bucket)
+            }
         }
-        rows.append(("Codex W", codexSnapshot?.weekly))
-        return rows
     }
 
     private static func limitText(for bucket: CodexUsageBucket?) -> String {
@@ -668,14 +699,11 @@ private enum StatusBarLimitImage {
         return formatter
     }()
 
-    private static func draw(row: Row, y: CGFloat) {
-        let labelAttrs = textAttributes(
-            NSFont.monospacedDigitSystemFont(ofSize: 4.4, weight: .semibold),
-            color: NSColor.white.withAlphaComponent(0.9)
-        )
-        NSString(string: row.label).draw(at: CGPoint(x: 20, y: y - 0.8), withAttributes: labelAttrs)
+    private static func draw(row: Row, y: CGFloat, trackX: CGFloat) {
+        let labelAttrs = textAttributes(labelFont, color: NSColor.white.withAlphaComponent(0.9))
+        NSString(string: row.label).draw(at: CGPoint(x: labelX, y: y - 0.8), withAttributes: labelAttrs)
 
-        let trackRect = NSRect(x: 39, y: y, width: 22, height: 2.5)
+        let trackRect = NSRect(x: trackX, y: y, width: trackWidth, height: 2.5)
         NSColor.black.withAlphaComponent(0.22).setFill()
         NSBezierPath(roundedRect: trackRect.insetBy(dx: -0.5, dy: -0.5), xRadius: 1.7, yRadius: 1.7).fill()
         NSColor.white.withAlphaComponent(0.18).setFill()
@@ -741,6 +769,7 @@ enum UsageImageExporter {
     ) async -> UsageImageExportResult {
         let codex: CodexUsageSnapshot?
         let claude: ClaudeUsageSnapshot?
+        var openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
         var ringMode: UsageRingDisplayMode = .labeled
         if let fixturePath = ProcessInfo.processInfo.environment["AGENTPAL_USAGE_FIXTURE"] {
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: fixturePath)),
@@ -785,6 +814,15 @@ enum UsageImageExporter {
             claude = ClaudeUsageSnapshot(fiveHour: short?.0.fiveHour, sevenDay: week?.0.sevenDay,
                                          modelLimits: model.map { [$0] } ?? [], fiveHourObservedAt: short?.1,
                                          sevenDayObservedAt: week?.1, observedAt: observed, source: "fixture")
+            if let value = fixture["openCodeGoWeekly"] as? [String: Any],
+               let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double {
+                let pace = value["pace"] as? Double ?? 100
+                let reset = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: observed + weekSeconds * pace / 100))
+                let body = #"{"usage":{"weekly":{"status":"ok","percent":"# + "\(100 - remaining)" + #","resetsAt":""# + reset + #""}}}"#
+                if let snapshot = OpenCodeGoUsageParser.snapshot(from: Data(body.utf8), observedAt: Date(timeIntervalSince1970: observed)) {
+                    openCodeGo = .snapshot(snapshot)
+                }
+            }
             if let mode = fixture["mode"] as? String, let parsed = UsageRingDisplayMode(rawValue: mode), parsed != .off {
                 ringMode = parsed
             }
@@ -793,13 +831,15 @@ enum UsageImageExporter {
             let claudeReader = ClaudeUsageReader()
             async let codexSnapshot = codexReader.readLatest()
             async let claudeSnapshot = claudeReader.readLatest()
+            async let goUsage = OpenCodeGoUsageReader().read()
             codex = await codexSnapshot
             claude = await claudeSnapshot
+            openCodeGo = await goUsage
         }
 
         let statusBarWritten: Bool
         if let statusBarURL,
-           let image = PalSettings.statusBarImage(codexSnapshot: codex, claudeSnapshot: claude) {
+           let image = PalSettings.statusBarImage(codexSnapshot: codex, claudeSnapshot: claude, openCodeGo: openCodeGo) {
             statusBarWritten = writePNG(image, to: statusBarURL)
         } else {
             statusBarWritten = statusBarURL == nil
@@ -1250,7 +1290,8 @@ final class OverlayController {
     private var usageTimer: Timer?
     private let codexUsageReader = CodexUsageReader()
     private let claudeUsageReader = ClaudeUsageReader()
-    var onUsageChanged: ((CodexUsageSnapshot?, ClaudeUsageSnapshot?) -> Void)?
+    private let openCodeGoUsageReader = OpenCodeGoUsageReader()
+    var onUsageChanged: ((CodexUsageSnapshot?, ClaudeUsageSnapshot?, OpenCodeGoUsageReader.Result) -> Void)?
 
     init() {
         overlayView = OverlayView(palAssetConfig: PalSettings.assetConfig())
@@ -1536,9 +1577,13 @@ final class OverlayController {
         async let claudeSnapshot = Task.detached(priority: .utility) {
             await claudeReader.readLatest()
         }.value
+        let goReader = openCodeGoUsageReader
+        async let openCodeGo = Task.detached(priority: .utility) {
+            await goReader.read()
+        }.value
         let nextCodexSnapshot = await codexSnapshot
         let nextClaudeSnapshot = await claudeSnapshot
-        onUsageChanged?(nextCodexSnapshot, nextClaudeSnapshot)
+        onUsageChanged?(nextCodexSnapshot, nextClaudeSnapshot, await openCodeGo)
         if overlayView.showsUsageRings {
             overlayView.setUsageSnapshot(nextCodexSnapshot)
             overlayView.setClaudeUsageSnapshot(nextClaudeSnapshot)

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.0
+
+### Features
+
+- `agentpal usage [--width N] [--no-color]` prints the usage rows as colored
+  text bars and exits, for terminals and ikesu's sidebar plugins.
+
 ## v0.10.1
 
 ### Fixes

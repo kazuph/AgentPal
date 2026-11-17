@@ -258,6 +258,34 @@ If you already have a statusline, just add the `cache=` block to it. Note that
 Claude Code only reports `rate_limits` for Claude Pro/Max subscriptions; API
 key logins have no rate-limit windows, so Claude rings stay hidden.
 
+### Usage in a terminal (`agentpal usage`)
+
+`agentpal usage` prints the same rows as the status bar image (Claude Code
+weekly, Claude Code 5h, the first per-model weekly limit, Codex weekly) as
+colored text bars, then exits without starting the menu bar app:
+
+```bash
+/Applications/AgentPal.app/Contents/MacOS/agentpal usage --width 25
+# CC W  ██████████│·  40%
+# CC 5h ----
+# FAB W ███████████│  89%
+# CX W  █│██████····  60%
+```
+
+The colored part is what is left, `│` is the even pace for the time left, red
+is use beyond the pace and green is room under it. The width defaults to
+`$IKESU_SIDEBAR_COLUMNS`, then `$COLUMNS`, then 26. `--no-color` (or
+`NO_COLOR`) prints plain text. It reads the same sources as the rings.
+
+ikesu shows it in its sidebar as a plugin:
+
+```bash
+mkdir -p ~/.config/ikesu/plugins/sidebar
+printf '#!/bin/sh\nexec /Applications/AgentPal.app/Contents/MacOS/agentpal usage\n' \
+  > ~/.config/ikesu/plugins/sidebar/usage.30s.sh
+chmod +x ~/.config/ikesu/plugins/sidebar/usage.30s.sh
+```
+
 ## Launch At Login
 
 Use the menu bar item to toggle Launch at Login.

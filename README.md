@@ -263,23 +263,20 @@ key logins have no rate-limit windows, so Claude rings stay hidden.
 `agentpal usage` prints the usage rows as colored text bars, then exits
 without starting the menu bar app: Claude weekly, Claude 5h (only while Claude
 Code reports it; verified Ultra accounts have no 5-hour limit), each per-model
-weekly limit, Codex weekly, and OpenCode Go's rolling 5 hours, week and month
-when this Mac has a Go key:
+weekly limit, Codex weekly, and OpenCode Go weekly when this Mac has a Go key:
 
 ```bash
 /Applications/AgentPal.app/Contents/MacOS/AgentPal usage --width 24
 # Claude W █████████│  34%
 # Fable W  █████████│  89%
 # Codex W  █│████····  57%
-# Go 5h    │█████████  99%
 # Go W     ███████│██  99%
-# Go M     █████████│ 100%
 ```
 
-OpenCode Go's rows come from `https://opencode.ai/zen/go/v1/usage`, called with
+OpenCode Go's row comes from `https://opencode.ai/zen/go/v1/usage`, called with
 the `opencode-go` key that `opencode auth login` saved in
 `~/.local/share/opencode/auth.json` (5-second timeout). Without that key the Go
-rows are left out; when the request fails they show `----`.
+row is left out; when the request fails it shows `----`.
 
 The colored part is what is left, `│` is the even pace for the time left, red
 is use beyond the pace and green is room under it. The width defaults to

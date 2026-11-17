@@ -19,8 +19,8 @@ public struct UsageTextRow: Equatable, Sendable {
     }
 
     /// Claude weekly, Claude 5h (only while Claude Code reports it), each per-model
-    /// weekly limit, Codex weekly, then OpenCode Go's 5h, weekly and monthly when
-    /// this Mac has a Go key.
+    /// weekly limit, Codex weekly, then OpenCode Go weekly when this Mac has a Go
+    /// key.
     public static func rows(
         codex: CodexUsageSnapshot?,
         claude: ClaudeUsageSnapshot?,
@@ -43,9 +43,7 @@ public struct UsageTextRow: Equatable, Sendable {
         case .unavailable:
             rows.append(UsageTextRow(label: "Go W", bucket: nil, observedAt: nil, kind: .openCodeGo))
         case let .snapshot(go):
-            for (label, bucket) in [("Go 5h", go.rolling), ("Go W", go.weekly), ("Go M", go.monthly)] {
-                rows.append(UsageTextRow(label: label, bucket: bucket, observedAt: go.observedAt, kind: .openCodeGo))
-            }
+            rows.append(UsageTextRow(label: "Go W", bucket: go.weekly, observedAt: go.observedAt, kind: .openCodeGo))
         }
         return rows
     }

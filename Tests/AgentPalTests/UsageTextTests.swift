@@ -26,8 +26,8 @@ final class UsageTextTests: XCTestCase {
     func testRowsAddOpenCodeGo() {
         let go = OpenCodeGoUsageSnapshot(rolling: week, weekly: week, monthly: nil, observedAt: observed)
         let rows = UsageTextRow.rows(codex: nil, claude: nil, openCodeGo: .snapshot(go))
-        XCTAssertEqual(rows.map(\.label), ["Claude W", "Codex W", "Go 5h", "Go W", "Go M"])
-        XCTAssertNil(rows[4].bucket)
+        XCTAssertEqual(rows.map(\.label), ["Claude W", "Codex W", "Go W"])
+        XCTAssertEqual(rows[2].bucket, week)
         XCTAssertEqual(UsageTextRow.rows(codex: nil, claude: nil, openCodeGo: .unavailable).map(\.label), ["Claude W", "Codex W", "Go W"])
     }
 

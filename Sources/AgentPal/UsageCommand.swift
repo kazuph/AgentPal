@@ -3,10 +3,13 @@ import AgentPalCore
 
 /// `agentpal usage [--width N] [--no-color]` prints the usage rows as text bars
 /// (for ikesu's sidebar plugin) and exits without starting the menu bar app.
+/// OpenCode Go's rows are read from opencode.ai with the Go key in
+/// ~/.local/share/opencode/auth.json, waiting at most 5 seconds.
 enum UsageCommand {
     private final class Box: @unchecked Sendable {
         var codex: CodexUsageSnapshot?
         var claude: ClaudeUsageSnapshot?
+        var openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
     }
 
     static func run(arguments: [String]) -> Never {
@@ -37,12 +40,14 @@ enum UsageCommand {
         let box = Box()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
+            async let go = OpenCodeGoUsageReader().read()
             box.codex = await CodexUsageReader().readLatest()
             box.claude = await ClaudeUsageReader().readLatest()
+            box.openCodeGo = await go
             done.signal()
         }
         done.wait()
-        let rows = UsageTextRow.rows(codex: box.codex, claude: box.claude)
+        let rows = UsageTextRow.rows(codex: box.codex, claude: box.claude, openCodeGo: box.openCodeGo)
         print(UsageTextRenderer.render(rows: rows, width: width, color: color))
         Foundation.exit(0)
     }

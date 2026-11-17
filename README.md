@@ -260,17 +260,26 @@ key logins have no rate-limit windows, so Claude rings stay hidden.
 
 ### Usage in a terminal (`agentpal usage`)
 
-`agentpal usage` prints the same rows as the status bar image (Claude Code
-weekly, Claude Code 5h, the first per-model weekly limit, Codex weekly) as
-colored text bars, then exits without starting the menu bar app:
+`agentpal usage` prints the usage rows as colored text bars, then exits
+without starting the menu bar app: Claude weekly, Claude 5h (only while Claude
+Code reports it; verified Ultra accounts have no 5-hour limit), each per-model
+weekly limit, Codex weekly, and OpenCode Go's rolling 5 hours, week and month
+when this Mac has a Go key:
 
 ```bash
-/Applications/AgentPal.app/Contents/MacOS/agentpal usage --width 25
-# CC W  ██████████│·  40%
-# CC 5h ----
-# FAB W ███████████│  89%
-# CX W  █│██████····  60%
+/Applications/AgentPal.app/Contents/MacOS/AgentPal usage --width 24
+# Claude W █████████│  34%
+# Fable W  █████████│  89%
+# Codex W  █│████····  57%
+# Go 5h    │█████████  99%
+# Go W     ███████│██  99%
+# Go M     █████████│ 100%
 ```
+
+OpenCode Go's rows come from `https://opencode.ai/zen/go/v1/usage`, called with
+the `opencode-go` key that `opencode auth login` saved in
+`~/.local/share/opencode/auth.json` (5-second timeout). Without that key the Go
+rows are left out; when the request fails they show `----`.
 
 The colored part is what is left, `│` is the even pace for the time left, red
 is use beyond the pace and green is room under it. The width defaults to
@@ -281,7 +290,7 @@ ikesu shows it in its sidebar as a plugin:
 
 ```bash
 mkdir -p ~/.config/ikesu/plugins/sidebar
-printf '#!/bin/sh\nexec /Applications/AgentPal.app/Contents/MacOS/agentpal usage\n' \
+printf '#!/bin/sh\nexec /Applications/AgentPal.app/Contents/MacOS/AgentPal usage\n' \
   > ~/.config/ikesu/plugins/sidebar/usage.30s.sh
 chmod +x ~/.config/ikesu/plugins/sidebar/usage.30s.sh
 ```

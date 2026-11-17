@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.12.0
+
+### Features
+
+- `agentpal usage` shows OpenCode Go's rolling 5 hours, week and month, read
+  with the Go key in `~/.local/share/opencode/auth.json`.
+- `agentpal usage` writes the full names (Claude, Fable, Codex) and drops the
+  Claude 5h row while Claude Code reports no 5-hour limit.
+
 ## v0.11.0
 
 ### Features

@@ -2,6 +2,10 @@ import AppKit
 import Foundation
 import AgentPalCore
 
+if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "usage" {
+    UsageCommand.run(arguments: Array(CommandLine.arguments.dropFirst(2)))
+}
+
 if CommandLine.arguments.contains("--dump-panes") {
     let panes = (try? TmuxCollector().collect()) ?? []
     for pane in panes {

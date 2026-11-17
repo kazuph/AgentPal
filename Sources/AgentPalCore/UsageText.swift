@@ -1,34 +1,50 @@
 import Foundation
 
-/// One line of `agentpal usage`: the same rows the status bar image draws.
+/// One line of `agentpal usage`.
 public struct UsageTextRow: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        case claude, codex, openCodeGo
+    }
+
     public let label: String
     public let bucket: CodexUsageBucket?
     public let observedAt: Date?
-    public let isCodex: Bool
+    public let kind: Kind
 
-    public init(label: String, bucket: CodexUsageBucket?, observedAt: Date?, isCodex: Bool) {
+    public init(label: String, bucket: CodexUsageBucket?, observedAt: Date?, kind: Kind) {
         self.label = label
         self.bucket = bucket
         self.observedAt = observedAt
-        self.isCodex = isCodex
+        self.kind = kind
     }
 
-    /// Claude Code weekly, Claude Code 5h, the first per-model weekly limit, Codex weekly.
-    public static func rows(codex: CodexUsageSnapshot?, claude: ClaudeUsageSnapshot?) -> [UsageTextRow] {
+    /// Claude weekly, Claude 5h (only while Claude Code reports it), each per-model
+    /// weekly limit, Codex weekly, then OpenCode Go weekly when this Mac has a Go
+    /// key.
+    public static func rows(
+        codex: CodexUsageSnapshot?,
+        claude: ClaudeUsageSnapshot?,
+        openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
+    ) -> [UsageTextRow] {
         var rows = [
-            UsageTextRow(label: "CC W", bucket: claude?.sevenDay, observedAt: claude.map { $0.sevenDayObservedAt ?? $0.observedAt }, isCodex: false),
-            UsageTextRow(label: "CC 5h", bucket: claude?.fiveHour, observedAt: claude.map { $0.fiveHourObservedAt ?? $0.observedAt }, isCodex: false),
+            UsageTextRow(label: "Claude W", bucket: claude?.sevenDay, observedAt: claude.map { $0.sevenDayObservedAt ?? $0.observedAt }, kind: .claude),
         ]
-        if let modelLimit = claude?.modelLimits.first {
-            rows.append(UsageTextRow(
-                label: "\(modelLimit.displayName.prefix(3).uppercased()) W",
-                bucket: modelLimit.bucket,
-                observedAt: modelLimit.observedAt,
-                isCodex: false
-            ))
+        // 5時間の上限が無いプラン（Ultra）では Claude Code が five_hour を出さないので、行ごと出さない。
+        if let claude, let fiveHour = claude.fiveHour {
+            rows.append(UsageTextRow(label: "Claude 5h", bucket: fiveHour, observedAt: claude.fiveHourObservedAt ?? claude.observedAt, kind: .claude))
         }
-        rows.append(UsageTextRow(label: "CX W", bucket: codex?.weekly, observedAt: codex?.observedAt, isCodex: true))
+        for modelLimit in claude?.modelLimits ?? [] {
+            rows.append(UsageTextRow(label: "\(modelLimit.displayName) W", bucket: modelLimit.bucket, observedAt: modelLimit.observedAt, kind: .claude))
+        }
+        rows.append(UsageTextRow(label: "Codex W", bucket: codex?.weekly, observedAt: codex?.observedAt, kind: .codex))
+        switch openCodeGo {
+        case .notConfigured:
+            break
+        case .unavailable:
+            rows.append(UsageTextRow(label: "Go W", bucket: nil, observedAt: nil, kind: .openCodeGo))
+        case let .snapshot(go):
+            rows.append(UsageTextRow(label: "Go W", bucket: go.weekly, observedAt: go.observedAt, kind: .openCodeGo))
+        }
         return rows
     }
 }
@@ -37,13 +53,17 @@ public struct UsageTextRow: Equatable, Sendable {
 /// the colored part is what is left, │ is the even pace for the time left,
 /// red marks use beyond the pace and green the room under it.
 public enum UsageTextRenderer {
-    public static let labelWidth = 6
-
-    public static func render(rows: [UsageTextRow], width: Int, color: Bool, now: Date = Date()) -> String {
-        rows.map { line(for: $0, width: width, color: color, now: now) }.joined(separator: "\n")
+    /// The labels share one column as wide as the longest label plus a space.
+    public static func labelWidth(for rows: [UsageTextRow]) -> Int {
+        (rows.map(\.label.count).max() ?? 0) + 1
     }
 
-    public static func line(for row: UsageTextRow, width: Int, color: Bool, now: Date = Date()) -> String {
+    public static func render(rows: [UsageTextRow], width: Int, color: Bool, now: Date = Date()) -> String {
+        let labelWidth = labelWidth(for: rows)
+        return rows.map { line(for: $0, width: width, labelWidth: labelWidth, color: color, now: now) }.joined(separator: "\n")
+    }
+
+    public static func line(for row: UsageTextRow, width: Int, labelWidth: Int, color: Bool, now: Date = Date()) -> String {
         let label = row.label.padding(toLength: labelWidth, withPad: " ", startingAt: 0)
         guard let bucket = row.bucket else {
             return label + paint("----", .dim, color)
@@ -64,7 +84,7 @@ public enum UsageTextRenderer {
             if let difference, position >= difference.lower, position < difference.upper {
                 bar += paint("█", difference.kind == .overuse ? .overuse : .surplus, color)
             } else if position < remaining {
-                bar += paint("█", row.isCodex ? .codex : .claude, color)
+                bar += paint("█", tone(for: row.kind), color)
             } else {
                 bar += paint(color ? "░" : "·", .dim, color)
             }
@@ -72,13 +92,22 @@ public enum UsageTextRenderer {
         return label + bar + " " + percent
     }
 
+    static func tone(for kind: UsageTextRow.Kind) -> Tone {
+        switch kind {
+        case .claude: return .claude
+        case .codex: return .codex
+        case .openCodeGo: return .openCodeGo
+        }
+    }
+
     enum Tone {
-        case claude, codex, overuse, surplus, marker, dim
+        case claude, codex, openCodeGo, overuse, surplus, marker, dim
 
         var sgr: String {
             switch self {
             case .claude: return "38;2;217;119;87"
             case .codex: return "38;2;108;158;248"
+            case .openCodeGo: return "38;2;200;160;255"
             case .overuse: return "38;2;229;72;77"
             case .surplus: return "38;2;70;196;110"
             case .marker: return "1;38;2;240;240;240"

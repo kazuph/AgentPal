@@ -155,6 +155,9 @@ Usage rings are the only feature that can make network requests:
 - Claude rings: AgentPal only reads a local statusline cache file. It does not
   read Claude Code credentials, access the macOS keychain, or call Anthropic's
   usage endpoint directly.
+- Gemini (Antigravity CLI) rings and bars: AgentPal only reads a local
+  statusline cache file (`~/.gemini/antigravity-cli/cache/statusline-quota.json`).
+  It does not read Antigravity credentials or call Google APIs directly.
 
 Tokens are not written into AgentPal logs or sent anywhere else by AgentPal.
 
@@ -258,17 +261,41 @@ If you already have a statusline, just add the `cache=` block to it. Note that
 Claude Code only reports `rate_limits` for Claude Pro/Max subscriptions; API
 key logins have no rate-limit windows, so Claude rings stay hidden.
 
+### Antigravity (Gemini) Usage Data Source
+
+Gemini bars and rings read a local statusline cache file written by Antigravity
+CLI's custom status line script (`~/.gemini/antigravity-cli/statusline.sh`).
+Default path: `~/.gemini/antigravity-cli/cache/statusline-quota.json`,
+overridable with `AGENTPAL_ANTIGRAVITY_USAGE_CACHE`. Files older than 24 hours
+are treated as unavailable.
+
+AgentPal reads only `gemini-weekly` and `gemini-5h` from `.quota`, requires no
+credentials or network requests, and omits the Gemini row entirely when
+`~/.gemini/antigravity-cli` is not present.
+
+To enable it, persist `.quota` from your `~/.gemini/antigravity-cli/statusline.sh`:
+
+```bash
+QUOTA_CACHE="${AGENTPAL_ANTIGRAVITY_USAGE_CACHE:-$HOME/.gemini/antigravity-cli/cache/statusline-quota.json}"
+QUOTA_JSON=$(printf '%s' "$INPUT" | jq -c 'select((.quota | type) == "object" and (.quota | length) > 0) | {observed_at: (now | floor), quota: .quota}' 2>/dev/null || true)
+if [ -n "$QUOTA_JSON" ]; then
+  mkdir -p "${QUOTA_CACHE%/*}" 2>/dev/null || true
+  printf '%s\n' "$QUOTA_JSON" > "$QUOTA_CACHE" 2>/dev/null || true
+fi
+```
+
 ### Usage in a terminal (`agentpal usage`)
 
 `agentpal usage` prints the usage rows as colored text bars, then exits
 without starting the menu bar app: Claude weekly, Claude 5h (only while Claude
-Code reports it; verified Ultra accounts have no 5-hour limit), each per-model
-weekly limit, Codex weekly, and OpenCode Go weekly when this Mac has a Go key:
+Code reports it; verified Ultra accounts have no 5-hour limit), Gemini weekly
+when Antigravity CLI is configured, Codex weekly, and OpenCode Go weekly when
+this Mac has a Go key:
 
 ```bash
 /Applications/AgentPal.app/Contents/MacOS/AgentPal usage --width 24
 # Claude W █████████│  34%
-# Fable W  █████████│  89%
+# Gemini W █████████│  89%
 # Codex W  █│████····  57%
 # Go W     ███████│██  99%
 ```

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.14.0
+
+### Features
+
+- Add Antigravity CLI Gemini usage support (`gemini-weekly` and `gemini-5h`)
+  read from the local statusline cache
+  (`~/.gemini/antigravity-cli/cache/statusline-quota.json`, overridable with
+  `AGENTPAL_ANTIGRAVITY_USAGE_CACHE`), with no credential access or network
+  requests.
+- Replace the per-model `Fable W` row with `Gemini W` so `agentpal usage` and
+  the status bar keep four compact rows in order: `Claude W`, `Gemini W`,
+  `Codex W`, and `Go W`. Show `Gemini 5h` alongside `Gemini W` in the status
+  menu, tooltip, and overlay rings.
+- Unify the usage bar base color to a calm slate across both `agentpal usage`
+  and the menu bar, tinting only service labels (`Claude` coral, `Gemini` blue,
+  `Codex` purple, `Go` white) so overuse (red) and headroom (mint) stand out
+  cleanly.
+
 ## v0.13.0
 
 ### Features

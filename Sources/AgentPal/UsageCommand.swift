@@ -9,6 +9,7 @@ enum UsageCommand {
     private final class Box: @unchecked Sendable {
         var codex: CodexUsageSnapshot?
         var claude: ClaudeUsageSnapshot?
+        var antigravity: AntigravityUsageReader.Result = .notConfigured
         var openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
     }
 
@@ -43,11 +44,17 @@ enum UsageCommand {
             async let go = OpenCodeGoUsageReader().read()
             box.codex = await CodexUsageReader().readLatest()
             box.claude = await ClaudeUsageReader().readLatest()
+            box.antigravity = AntigravityUsageReader().read()
             box.openCodeGo = await go
             done.signal()
         }
         done.wait()
-        let rows = UsageTextRow.rows(codex: box.codex, claude: box.claude, openCodeGo: box.openCodeGo)
+        let rows = UsageTextRow.rows(
+            codex: box.codex,
+            claude: box.claude,
+            antigravity: box.antigravity,
+            openCodeGo: box.openCodeGo
+        )
         print(UsageTextRenderer.render(rows: rows, width: width, color: color))
         Foundation.exit(0)
     }

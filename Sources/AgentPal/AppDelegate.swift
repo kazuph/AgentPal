@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appServerManager: AppServerManager?
     private var latestCodexUsageSnapshot: CodexUsageSnapshot?
     private var latestClaudeUsageSnapshot: ClaudeUsageSnapshot?
+    private var latestAntigravityUsage: AntigravityUsageReader.Result = .notConfigured
     private var latestOpenCodeGoUsage: OpenCodeGoUsageReader.Result = .notConfigured
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -29,9 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let overlayController = OverlayController()
         self.overlayController = overlayController
-        overlayController.onUsageChanged = { [weak self] codexSnapshot, claudeSnapshot, openCodeGo in
+        overlayController.onUsageChanged = { [weak self] codexSnapshot, claudeSnapshot, antigravity, openCodeGo in
             self?.latestCodexUsageSnapshot = codexSnapshot
             self?.latestClaudeUsageSnapshot = claudeSnapshot
+            self?.latestAntigravityUsage = antigravity
             self?.latestOpenCodeGoUsage = openCodeGo
             self?.rebuildStatusMenu()
         }
@@ -87,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in StatusBarLimitImage.menuItems(
             codexSnapshot: latestCodexUsageSnapshot,
             claudeSnapshot: latestClaudeUsageSnapshot,
+            antigravity: latestAntigravityUsage,
             openCodeGo: latestOpenCodeGoUsage,
             target: self,
             action: #selector(ignoreLimitMenuItem(_:))
@@ -128,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = PalSettings.statusBarImage(
             codexSnapshot: latestCodexUsageSnapshot,
             claudeSnapshot: latestClaudeUsageSnapshot,
+            antigravity: latestAntigravityUsage,
             openCodeGo: latestOpenCodeGoUsage
         )
         statusItem?.length = (image?.size.width ?? StatusBarLimitImage.height) + 6
@@ -136,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.toolTip = StatusBarLimitImage.tooltip(
             codexSnapshot: latestCodexUsageSnapshot,
             claudeSnapshot: latestClaudeUsageSnapshot,
+            antigravity: latestAntigravityUsage,
             openCodeGo: latestOpenCodeGoUsage
         )
     }
@@ -492,15 +497,18 @@ enum PalSettings {
     static func statusBarImage(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result = .notConfigured,
         openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
     ) -> NSImage? {
         StatusBarLimitImage.make(
             palImage: firstFrameImage(for: assetConfig(), size: NSSize(width: 18, height: 20)),
             codexSnapshot: codexSnapshot,
             claudeSnapshot: claudeSnapshot,
+            antigravity: antigravity,
             openCodeGo: openCodeGo,
             codexPalette: UsageRingPalette.derived(from: PalSpriteLoader(config: assetConfig()).dominantColor()),
-            claudePalette: UsageRingPalette.derived(from: UsageRingPalette.claudeBase)
+            claudePalette: UsageRingPalette.derived(from: UsageRingPalette.claudeBase),
+            geminiPalette: UsageRingPalette.derived(from: UsageRingPalette.geminiBase)
         )
     }
 
@@ -567,6 +575,7 @@ private enum StatusBarLimitImage {
     private struct Row {
         let label: String
         let bucket: CodexUsageBucket?
+        let labelColor: NSColor
         let color: NSColor
         let observedAt: Date?
     }
@@ -575,16 +584,20 @@ private enum StatusBarLimitImage {
         palImage: NSImage?,
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result = .notConfigured,
         openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured,
         codexPalette: UsageRingPalette,
-        claudePalette: UsageRingPalette
+        claudePalette: UsageRingPalette,
+        geminiPalette: UsageRingPalette
     ) -> NSImage {
         let rows = rows(
             codexSnapshot: codexSnapshot,
             claudeSnapshot: claudeSnapshot,
+            antigravity: antigravity,
             openCodeGo: openCodeGo,
             codexPalette: codexPalette,
-            claudePalette: claudePalette
+            claudePalette: claudePalette,
+            geminiPalette: geminiPalette
         )
         // ラベルの列は一番長い名前に合わせ、バーはその右に並べる。
         let labelAttrs = [NSAttributedString.Key.font: labelFont]
@@ -608,9 +621,10 @@ private enum StatusBarLimitImage {
     static func tooltip(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result = .notConfigured,
         openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
     ) -> String {
-        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, openCodeGo: openCodeGo)
+        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, antigravity: antigravity, openCodeGo: openCodeGo)
             .map { row in
                 guard let bucket = row.bucket else { return "\(row.label): --" }
                 return "\(row.label): \(Int(round(bucket.remainingPercent)))% remaining, reset \(resetText(for: bucket))"
@@ -621,11 +635,12 @@ private enum StatusBarLimitImage {
     static func menuItems(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result = .notConfigured,
         openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured,
         target: AnyObject?,
         action: Selector?
     ) -> [NSMenuItem] {
-        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, openCodeGo: openCodeGo).map { row in
+        usageRows(codexSnapshot: codexSnapshot, claudeSnapshot: claudeSnapshot, antigravity: antigravity, openCodeGo: openCodeGo).map { row in
             let item = NSMenuItem(
                 title: "\(row.label): \(limitText(for: row.bucket))",
                 action: action,
@@ -636,44 +651,79 @@ private enum StatusBarLimitImage {
         }
     }
 
-    static let openCodeGoColor = NSColor(calibratedRed: 200 / 255, green: 160 / 255, blue: 1, alpha: 1)
+    static let claudeLabelColor = NSColor(calibratedRed: 224 / 255, green: 160 / 255, blue: 139 / 255, alpha: 1)
+    static let geminiLabelColor = NSColor(calibratedRed: 137 / 255, green: 180 / 255, blue: 250 / 255, alpha: 1)
+    static let codexLabelColor = NSColor(calibratedRed: 203 / 255, green: 166 / 255, blue: 247 / 255, alpha: 1)
+    static let openCodeGoLabelColor = NSColor(calibratedRed: 230 / 255, green: 234 / 255, blue: 245 / 255, alpha: 1)
+    static let barBaseColor = NSColor(calibratedRed: 126 / 255, green: 136 / 255, blue: 168 / 255, alpha: 1)
+    static let overuseColor = NSColor(calibratedRed: 247 / 255, green: 118 / 255, blue: 142 / 255, alpha: 1)
+    static let surplusColor = NSColor(calibratedRed: 115 / 255, green: 218 / 255, blue: 202 / 255, alpha: 1)
 
-    /// The same rows and names as `agentpal usage` (UsageTextRow.rows), with the first
-    /// per-model limit only so the image keeps its height.
+    /// The same rows and names as `agentpal usage` (UsageTextRow.rows):
+    /// Claude W, (Claude 5h if present), Gemini W, Codex W, and OpenCode Go W.
     private static func rows(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result,
         openCodeGo: OpenCodeGoUsageReader.Result,
         codexPalette: UsageRingPalette,
-        claudePalette: UsageRingPalette
+        claudePalette: UsageRingPalette,
+        geminiPalette: UsageRingPalette
     ) -> [Row] {
-        var textRows = UsageTextRow.rows(codex: codexSnapshot, claude: claudeSnapshot, openCodeGo: openCodeGo)
-        let modelLabels = Set((claudeSnapshot?.modelLimits ?? []).dropFirst().map { "\($0.displayName) W" })
-        textRows.removeAll { modelLabels.contains($0.label) }
+        let textRows = UsageTextRow.rows(
+            codex: codexSnapshot,
+            claude: claudeSnapshot,
+            antigravity: antigravity,
+            openCodeGo: openCodeGo
+        )
         return textRows.map { row in
-            let color: NSColor
+            let labelColor: NSColor
             switch row.kind {
-            case .claude: color = row.label == "Claude 5h" ? claudePalette.shortTerm : claudePalette.weekly
-            case .codex: color = codexPalette.weekly
-            case .openCodeGo: color = openCodeGoColor
+            case .claude: labelColor = claudeLabelColor
+            case .gemini: labelColor = geminiLabelColor
+            case .codex: labelColor = codexLabelColor
+            case .openCodeGo: labelColor = openCodeGoLabelColor
             }
-            return Row(label: row.label, bucket: row.bucket, color: color, observedAt: row.observedAt)
+            return Row(
+                label: row.label,
+                bucket: row.bucket,
+                labelColor: labelColor,
+                color: barBaseColor,
+                observedAt: row.observedAt
+            )
         }
     }
 
     private static func usageRows(
         codexSnapshot: CodexUsageSnapshot?,
         claudeSnapshot: ClaudeUsageSnapshot?,
+        antigravity: AntigravityUsageReader.Result,
         openCodeGo: OpenCodeGoUsageReader.Result
     ) -> [(label: String, bucket: CodexUsageBucket?)] {
-        UsageTextRow.rows(codex: codexSnapshot, claude: claudeSnapshot, openCodeGo: openCodeGo).map { row in
+        var result: [(label: String, bucket: CodexUsageBucket?)] = []
+        for row in UsageTextRow.rows(
+            codex: codexSnapshot,
+            claude: claudeSnapshot,
+            antigravity: antigravity,
+            openCodeGo: openCodeGo
+        ) {
             switch row.label {
-            case "Claude W": return ("Claude Code W", row.bucket)
-            case "Claude 5h": return ("Claude Code 5h", row.bucket)
-            case "Go W": return ("OpenCode Go W", row.bucket)
-            default: return (row.label, row.bucket)
+            case "Claude W":
+                result.append(("Claude Code W", row.bucket))
+            case "Claude 5h":
+                result.append(("Claude Code 5h", row.bucket))
+            case "Gemini W":
+                result.append(("Gemini W", row.bucket))
+                if case let .snapshot(gemini) = antigravity, let fiveHour = gemini.fiveHour {
+                    result.append(("Gemini 5h", fiveHour))
+                }
+            case "Go W":
+                result.append(("OpenCode Go W", row.bucket))
+            default:
+                result.append((row.label, row.bucket))
             }
         }
+        return result
     }
 
     private static func limitText(for bucket: CodexUsageBucket?) -> String {
@@ -700,7 +750,7 @@ private enum StatusBarLimitImage {
     }()
 
     private static func draw(row: Row, y: CGFloat, trackX: CGFloat) {
-        let labelAttrs = textAttributes(labelFont, color: NSColor.white.withAlphaComponent(0.9))
+        let labelAttrs = textAttributes(labelFont, color: row.labelColor.withAlphaComponent(0.95))
         NSString(string: row.label).draw(at: CGPoint(x: labelX, y: y - 0.8), withAttributes: labelAttrs)
 
         let trackRect = NSRect(x: trackX, y: y, width: trackWidth, height: 2.5)
@@ -722,7 +772,7 @@ private enum StatusBarLimitImage {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: trackRect, xRadius: 1.3, yRadius: 1.3).addClip()
         if let difference = UsagePaceDifference.between(remaining: bucket.remainingPercent, pace: pace) {
-            (difference.kind == .overuse ? NSColor.systemRed : NSColor.systemGreen).setFill()
+            (difference.kind == .overuse ? overuseColor : surplusColor).setFill()
             NSRect(x: trackRect.minX + trackRect.width * difference.lower / 100, y: trackRect.minY,
                    width: trackRect.width * (difference.upper - difference.lower) / 100, height: trackRect.height).fill()
         }
@@ -769,6 +819,7 @@ enum UsageImageExporter {
     ) async -> UsageImageExportResult {
         let codex: CodexUsageSnapshot?
         let claude: ClaudeUsageSnapshot?
+        var antigravity: AntigravityUsageReader.Result = .notConfigured
         var openCodeGo: OpenCodeGoUsageReader.Result = .notConfigured
         var ringMode: UsageRingDisplayMode = .labeled
         if let fixturePath = ProcessInfo.processInfo.environment["AGENTPAL_USAGE_FIXTURE"] {
@@ -806,11 +857,39 @@ enum UsageImageExporter {
                 if let pace = value["pace"] as? Double { bucket["reset_at"] = observed + weekSeconds * pace / 100 }
                 codex = CodexUsageParser.snapshot(from: ["rate_limit": ["secondary": bucket]], observedAt: Date(timeIntervalSince1970: observed), source: "fixture")
             } else { codex = nil }
-            if weekInput != nil && week == nil || shortInput != nil && short == nil || modelInput != nil && model == nil || codexInput != nil && codex == nil || (week == nil && short == nil && model == nil && codex == nil) {
+            var geminiQuota: [String: Any] = [:]
+            var geminiObserved: Double?
+            if let value = fixture["geminiWeekly"] as? [String: Any],
+               let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double {
+                var bucket: [String: Any] = ["remaining_fraction": remaining / 100.0]
+                if let pace = value["pace"] as? Double {
+                    bucket["reset_in_seconds"] = weekSeconds * pace / 100.0
+                }
+                geminiQuota["gemini-weekly"] = bucket
+                geminiObserved = observed
+            }
+            if let value = fixture["geminiFiveHour"] as? [String: Any],
+               let observed = value["observedAt"] as? Double, let remaining = value["remaining"] as? Double {
+                var bucket: [String: Any] = ["remaining_fraction": remaining / 100.0]
+                if let pace = value["pace"] as? Double {
+                    bucket["reset_in_seconds"] = shortSeconds * pace / 100.0
+                }
+                geminiQuota["gemini-5h"] = bucket
+                geminiObserved = geminiObserved ?? observed
+            }
+            if !geminiQuota.isEmpty, let observed = geminiObserved,
+               let snapshot = AntigravityUsageParser.snapshot(
+                   from: ["observed_at": observed, "quota": geminiQuota],
+                   observedAt: Date(timeIntervalSince1970: observed),
+                   source: "fixture"
+               ) {
+                antigravity = .snapshot(snapshot)
+            }
+            if weekInput != nil && week == nil || shortInput != nil && short == nil || modelInput != nil && model == nil || codexInput != nil && codex == nil || (week == nil && short == nil && model == nil && codex == nil && geminiQuota.isEmpty) {
                 fputs("Invalid AGENTPAL_USAGE_FIXTURE bucket\n", stderr)
                 return UsageImageExportResult(statusBarWritten: false, overlayWritten: false, overlayLabelBounds: [], overlaySize: nil)
             }
-            let observed = week?.1 ?? short?.1 ?? model?.observedAt ?? codex!.observedAt
+            let observed = week?.1 ?? short?.1 ?? model?.observedAt ?? codex?.observedAt ?? Date(timeIntervalSince1970: geminiObserved ?? 0)
             claude = ClaudeUsageSnapshot(fiveHour: short?.0.fiveHour, sevenDay: week?.0.sevenDay,
                                          modelLimits: model.map { [$0] } ?? [], fiveHourObservedAt: short?.1,
                                          sevenDayObservedAt: week?.1, observedAt: observed, source: "fixture")
@@ -829,17 +908,24 @@ enum UsageImageExporter {
         } else {
             let codexReader = CodexUsageReader()
             let claudeReader = ClaudeUsageReader()
+            let antigravityReader = AntigravityUsageReader()
             async let codexSnapshot = codexReader.readLatest()
             async let claudeSnapshot = claudeReader.readLatest()
             async let goUsage = OpenCodeGoUsageReader().read()
             codex = await codexSnapshot
             claude = await claudeSnapshot
+            antigravity = antigravityReader.read()
             openCodeGo = await goUsage
         }
 
         let statusBarWritten: Bool
         if let statusBarURL,
-           let image = PalSettings.statusBarImage(codexSnapshot: codex, claudeSnapshot: claude, openCodeGo: openCodeGo) {
+           let image = PalSettings.statusBarImage(
+               codexSnapshot: codex,
+               claudeSnapshot: claude,
+               antigravity: antigravity,
+               openCodeGo: openCodeGo
+           ) {
             statusBarWritten = writePNG(image, to: statusBarURL)
         } else {
             statusBarWritten = statusBarURL == nil
@@ -858,6 +944,11 @@ enum UsageImageExporter {
         overlay.setUsageRingMode(ringMode, persist: false)
         overlay.setUsageSnapshot(codex)
         overlay.setClaudeUsageSnapshot(claude)
+        if case let .snapshot(geminiSnapshot) = antigravity {
+            overlay.setAntigravityUsageSnapshot(geminiSnapshot)
+        } else {
+            overlay.setAntigravityUsageSnapshot(nil)
+        }
         let size = overlay.preferredSize()
         overlay.frame = NSRect(origin: .zero, size: size)
         overlay.displayIfNeeded()
@@ -1290,8 +1381,9 @@ final class OverlayController {
     private var usageTimer: Timer?
     private let codexUsageReader = CodexUsageReader()
     private let claudeUsageReader = ClaudeUsageReader()
+    private let antigravityUsageReader = AntigravityUsageReader()
     private let openCodeGoUsageReader = OpenCodeGoUsageReader()
-    var onUsageChanged: ((CodexUsageSnapshot?, ClaudeUsageSnapshot?, OpenCodeGoUsageReader.Result) -> Void)?
+    var onUsageChanged: ((CodexUsageSnapshot?, ClaudeUsageSnapshot?, AntigravityUsageReader.Result, OpenCodeGoUsageReader.Result) -> Void)?
 
     init() {
         overlayView = OverlayView(palAssetConfig: PalSettings.assetConfig())
@@ -1577,19 +1669,30 @@ final class OverlayController {
         async let claudeSnapshot = Task.detached(priority: .utility) {
             await claudeReader.readLatest()
         }.value
+        let antigravityReader = antigravityUsageReader
+        async let antigravityUsage = Task.detached(priority: .utility) {
+            antigravityReader.read()
+        }.value
         let goReader = openCodeGoUsageReader
         async let openCodeGo = Task.detached(priority: .utility) {
             await goReader.read()
         }.value
         let nextCodexSnapshot = await codexSnapshot
         let nextClaudeSnapshot = await claudeSnapshot
-        onUsageChanged?(nextCodexSnapshot, nextClaudeSnapshot, await openCodeGo)
+        let nextAntigravityUsage = await antigravityUsage
+        onUsageChanged?(nextCodexSnapshot, nextClaudeSnapshot, nextAntigravityUsage, await openCodeGo)
         if overlayView.showsUsageRings {
             overlayView.setUsageSnapshot(nextCodexSnapshot)
             overlayView.setClaudeUsageSnapshot(nextClaudeSnapshot)
+            if case let .snapshot(geminiSnapshot) = nextAntigravityUsage {
+                overlayView.setAntigravityUsageSnapshot(geminiSnapshot)
+            } else {
+                overlayView.setAntigravityUsageSnapshot(nil)
+            }
         } else {
             overlayView.setUsageSnapshot(nil)
             overlayView.setClaudeUsageSnapshot(nil)
+            overlayView.setAntigravityUsageSnapshot(nil)
         }
         if let snapshotPath = ProcessInfo.processInfo.environment["AGENTPAL_SNAPSHOT_PATH"] {
             overlayView.writeSnapshot(to: URL(fileURLWithPath: snapshotPath))
@@ -1914,8 +2017,10 @@ final class OverlayView: NSView {
     }
     private var usageSnapshot: CodexUsageSnapshot?
     private var claudeUsageSnapshot: ClaudeUsageSnapshot?
+    private var antigravityUsageSnapshot: AntigravityUsageSnapshot?
     private var usageRingPalette = UsageRingPalette.default
     private let claudeRingPalette = UsageRingPalette.derived(from: UsageRingPalette.claudeBase)
+    private let geminiRingPalette = UsageRingPalette.derived(from: UsageRingPalette.geminiBase)
 
     init(frame frameRect: NSRect = .zero, palAssetConfig: PalAssetConfig) {
         self.palAssetConfig = palAssetConfig
@@ -2125,6 +2230,11 @@ final class OverlayView: NSView {
         needsDisplay = true
     }
 
+    func setAntigravityUsageSnapshot(_ snapshot: AntigravityUsageSnapshot?) {
+        antigravityUsageSnapshot = snapshot?.hasVisibleBuckets == true ? snapshot : nil
+        needsDisplay = true
+    }
+
     func setBubbles(_ bubbles: [PaneBubble]) {
         self.bubbles = bubbles.deduplicatedByPaneID().sorted { lhs, rhs in
             let leftSessionRank = lhs.pane.sessionName == "0" ? 0 : 1
@@ -2306,7 +2416,7 @@ final class OverlayView: NSView {
         let observedAt: Date
     }
 
-    /// Claude rings sit on the outside, Codex rings on the inside.
+    /// Claude rings sit on the outside, Gemini rings in the middle, Codex rings on the inside.
     private func usageRingSpecs() -> [UsageRingSpec] {
         var specs: [UsageRingSpec] = []
         if let claudeUsageSnapshot {
@@ -2326,12 +2436,22 @@ final class OverlayView: NSView {
                     observedAt: claudeUsageSnapshot.fiveHourObservedAt ?? claudeUsageSnapshot.observedAt
                 ))
             }
-            for modelLimit in claudeUsageSnapshot.modelLimits {
+        }
+        if let antigravityUsageSnapshot {
+            if let weekly = antigravityUsageSnapshot.weekly {
                 specs.append(UsageRingSpec(
-                    label: modelLimit.displayName,
-                    bucket: modelLimit.bucket,
-                    color: claudeRingPalette.weekly,
-                    observedAt: modelLimit.observedAt
+                    label: weekly.label,
+                    bucket: weekly,
+                    color: geminiRingPalette.weekly,
+                    observedAt: antigravityUsageSnapshot.observedAt
+                ))
+            }
+            if let fiveHour = antigravityUsageSnapshot.fiveHour {
+                specs.append(UsageRingSpec(
+                    label: fiveHour.label,
+                    bucket: fiveHour,
+                    color: geminiRingPalette.shortTerm,
+                    observedAt: antigravityUsageSnapshot.observedAt
                 ))
             }
         }
@@ -3302,6 +3422,8 @@ struct UsageRingPalette {
     // Anthropic brand coral (#D97757) so Claude rings read distinctly from
     // the pal-derived Codex rings.
     static let claudeBase = NSColor(calibratedRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
+    // Gemini cyan-blue (#4DB6FF) for Antigravity Gemini quota rings and bars.
+    static let geminiBase = NSColor(calibratedRed: 77 / 255, green: 182 / 255, blue: 1.0, alpha: 1)
     static let `default` = UsageRingPalette.derived(from: defaultBase)
 
     let outer: NSColor
